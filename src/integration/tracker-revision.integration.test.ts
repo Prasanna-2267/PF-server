@@ -23,10 +23,10 @@ before(async () => {
   chapterId = randomUUID();
   noteId = randomUUID();
   await prisma.user.create({ data: { id: userId, email: `tracker-${suffix}@test.local`, fullName: "Tracker Learner", roleId: role.id } });
-  await prisma.course.create({ data: { id: courseId, slug: `tracker-${suffix}`, code: `T${suffix.slice(0, 6)}`, name: "Tracker Course" } });
+  await prisma.course.create({ data: { id: courseId, slug: `tracker-${suffix}`, code: `T${suffix.slice(0, 6)}`, name: `Tracker Course ${suffix}` } });
   await prisma.contentItem.create({ data: { id: subjectId, courseId, kind: "FOLDER", name: "Physics", entityType: "SUBJECT" } });
   await prisma.contentItem.create({ data: { id: chapterId, courseId, parentId: subjectId, kind: "FOLDER", name: "Motion", entityType: "CHAPTER" } });
-  await prisma.contentItem.create({ data: { id: noteId, courseId, parentId: chapterId, kind: "FILE", name: "Motion Notes", mimeType: "application/pdf" } });
+  await prisma.contentItem.create({ data: { id: noteId, courseId, parentId: chapterId, kind: "FILE", name: "Motion Notes", mimeType: "application/pdf", storagePath: `integration/tracker/${noteId}.pdf` } });
   await prisma.learnerPreference.create({ data: { userId, selectedCourseId: courseId, timezone: "UTC", dailyTargetMinutes: 60, examDate: new Date(Date.now() + 30 * 86_400_000), examDatePrecision: "DAY" } });
   await prisma.learnerNoteState.create({ data: { userId, contentItemId: noteId, completed: true, completedAt: new Date(), revisionCount: 1 } });
   await prisma.noteRevisionEvent.create({ data: { userId, contentItemId: noteId, source: "MANUAL", revisedAt: new Date(Date.now() - 2 * 86_400_000) } });
@@ -35,11 +35,11 @@ before(async () => {
 
 after(async () => {
   if (!enabled) return;
-  await prisma.user.delete({ where: { id: userId } });
-  await prisma.contentItem.delete({ where: { id: noteId } });
-  await prisma.contentItem.delete({ where: { id: chapterId } });
-  await prisma.contentItem.delete({ where: { id: subjectId } });
-  await prisma.course.delete({ where: { id: courseId } });
+  if (userId) await prisma.user.deleteMany({ where: { id: userId } });
+  if (noteId) await prisma.contentItem.deleteMany({ where: { id: noteId } });
+  if (chapterId) await prisma.contentItem.deleteMany({ where: { id: chapterId } });
+  if (subjectId) await prisma.contentItem.deleteMany({ where: { id: subjectId } });
+  if (courseId) await prisma.course.deleteMany({ where: { id: courseId } });
   await prisma.$disconnect();
 });
 

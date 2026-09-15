@@ -11,7 +11,7 @@ const validEnvironment: NodeJS.ProcessEnv = {
 
 test("configuration parsing keeps explicit CORS origins and safe defaults", () => {
   const config = parseEnvironment(validEnvironment);
-  assert.equal(config.server.port, 3000);
+  assert.equal(config.server.port, 4000);
   assert.equal(config.corsOrigins.has("http://localhost:5173"), true);
   assert.equal(config.corsOrigins.has("https://example.test"), true);
   assert.equal(config.auth.passwordRegistrationEnabled, false);

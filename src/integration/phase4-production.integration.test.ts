@@ -155,12 +155,12 @@ test("staged mobile registration verifies email before creating a student sessio
   const server = createApp(getConfig()).listen(0, "127.0.0.1");
   await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/auth`;
-  const headers = { "content-type": "application/json", "x-client-platform": "ANDROID", "x-device-name": "Phase 4 Android" };
+  const headers = { "content-type": "application/json", "x-client-platform": "ANDROID", "x-device-name": "Phase 4 Android", "x-device-id": randomUUID(), "x-device-secret": `phase4-device-secret-${randomUUID()}` };
   const email = `mobile-registration-${suffix}@test.invalid`;
   try {
     const createdResponse = await fetch(`${base}/registrations`, {
       method: "POST", headers,
-      body: JSON.stringify({ fullName: "Mobile Registration Student", phone: "+919000000099", email, password }),
+      body: JSON.stringify({ fullName: "Mobile Registration Student", phone: "+919000000099", email, password, devicePolicyAccepted: true }),
     });
     assert.equal(createdResponse.status, 201);
     const created = await createdResponse.json() as { registrationId: string; developmentCode: string };
@@ -299,7 +299,7 @@ test("global Super Admin academic APIs expose only direct Parallax Flow data", {
   assert.ok((contentRows.data as unknown as Array<{ id: string }>).some((row) => row.id === platformContent.id));
   await expectCode(() => content.getContent({ academyId: null, actorId: superId }, academyContent.id), "CONTENT_NOT_FOUND");
 
-  const questionsRows = await questions.listQuestions({ actorId: superId }, { page: 1, limit: 100 });
+  const questionsRows = await questions.listQuestions({ actorId: superId }, { courseId: platformCourse.id, page: 1, limit: 100 });
   assert.ok(questionsRows.data.some((row) => row.id === platformQuestion.id));
   assert.ok(!questionsRows.data.some((row) => row.academyId === academyAId));
 
@@ -322,7 +322,7 @@ test("global Super Admin academic APIs expose only direct Parallax Flow data", {
     assert.ok(coursesBody.data.some((row) => row.id === platformCourse.id));
     assert.ok(!coursesBody.data.some((row) => row.id === courseAId));
     assert.equal((await fetch(`${base}/api/admin/content?courseId=${platformCourse.id}`, { headers })).status, 200);
-    assert.equal((await fetch(`${base}/api/admin/questions?limit=100`, { headers })).status, 200);
+    assert.equal((await fetch(`${base}/api/admin/questions?courseId=${platformCourse.id}&limit=100`, { headers })).status, 200);
     const broadcastsResponse = await fetch(`${base}/api/admin/broadcasts?limit=100`, { headers });
     const broadcastsBody = await broadcastsResponse.json() as { data: Array<{ id: string }> };
     assert.ok(broadcastsBody.data.some((row) => row.id === platformBroadcast.id));
@@ -334,6 +334,7 @@ test("global Super Admin academic APIs expose only direct Parallax Flow data", {
 
 test("HTTP RBAC, single-tenant Academy Admin scope, IDOR, and commercial boundaries fail closed", { skip: !enabled }, async () => {
   const foreignQuestion = await questions.createQuestion({ academyId: academyBId, actorId: adminAId }, { kind: "NORMAL_DESCRIPTIVE", courseId: courseBId, questionHtml: "Academy B only" });
+  const foreignQuestionFile = await prisma.contentItem.create({ data: { courseId: courseBId, kind: "FILE", name: `Foreign HTTP question ${suffix}.pdf`, mimeType: "application/pdf", storagePath: `integration/questions/foreign-http-${suffix}.pdf`, accessType: "FREE", status: "PUBLISHED" } });
   const foreignBroadcast = await academy.createAcademyBroadcast(contextB, { title: "Academy B only", message: "Private Academy B announcement" });
   const server = createApp(getConfig()).listen(0, "127.0.0.1");
   await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
@@ -389,10 +390,10 @@ test("HTTP RBAC, single-tenant Academy Admin scope, IDOR, and commercial boundar
     assert.equal((await call("/api/academy/broadcasts", adminToken, { method: "POST", body: JSON.stringify({ title: "Store sale", message: "Buy now", type: "STORE" }) })).status, 422);
     assert.equal((await call("/api/academy/broadcasts", adminToken, { method: "POST", body: JSON.stringify({ title: "Forged Academy", message: "Denied", academyId: academyBId }) })).status, 403);
     assert.equal((await call("/api/academy/questions", adminToken, { method: "POST", body: JSON.stringify({ kind: "NORMAL_DESCRIPTIVE", questionHtml: "Forged", academyId: academyBId }) })).status, 403);
-    assert.equal((await call("/api/academy/questions", adminToken, { method: "POST", body: JSON.stringify({ kind: "NORMAL_DESCRIPTIVE", questionHtml: "Foreign course", courseId: courseBId }) })).status, 404);
+    assert.equal((await call("/api/academy/questions", adminToken, { method: "POST", body: JSON.stringify({ kind: "NORMAL_MCQ", questionHtml: "Foreign course", courseId: courseBId, contentItemIds: [foreignQuestionFile.id], correctOptionId: "A", options: [{ optionLabel: "A", html: "Correct" }, { optionLabel: "B", html: "Wrong" }] }) })).status, 404);
     assert.equal((await call("/api/academy/broadcasts", adminToken, { method: "POST", body: JSON.stringify({ title: "Foreign course", message: "Denied", targetCourseId: courseBId }) })).status, 404);
     assert.equal((await call(`/api/academy/questions/${foreignQuestion.id}`, adminToken)).status, 404);
-    assert.equal((await call(`/api/academy/questions/${foreignQuestion.id}`, adminToken, { method: "PUT", body: JSON.stringify({ kind: "NORMAL_DESCRIPTIVE", questionHtml: "Tampered" }) })).status, 404);
+    assert.equal((await call(`/api/academy/questions/${foreignQuestion.id}`, adminToken, { method: "PUT", body: JSON.stringify({ kind: "NORMAL_MCQ", questionHtml: "Tampered", courseId: courseBId, contentItemIds: [foreignQuestionFile.id], correctOptionId: "A", options: [{ optionLabel: "A", html: "Correct" }, { optionLabel: "B", html: "Wrong" }] }) })).status, 404);
     assert.equal((await call(`/api/academy/broadcasts/${foreignBroadcast.id}`, adminToken)).status, 404);
     assert.equal((await call(`/api/academy/broadcasts/${foreignBroadcast.id}`, adminToken, { method: "PATCH", body: JSON.stringify({ title: "Tampered" }) })).status, 404);
     assert.equal((await call("/api/academy/questions?limit=101", adminToken)).status, 422);
@@ -440,17 +441,17 @@ test("learner personalisation is tenant-visible, month-normalized, versioned, an
     const optionsResponse = await call("/api/student/preferences/options");
     assert.equal(optionsResponse.status, 200);
     const options = await optionsResponse.json() as { courses: Array<{ id: string }> };
-    assert.ok(options.courses.some((course) => course.id === platformCourse.id));
+    assert.ok(!options.courses.some((course) => course.id === platformCourse.id), "Academy learners must not leave their tenant through a platform course selection");
     assert.ok(options.courses.some((course) => course.id === courseAId));
     assert.ok(!options.courses.some((course) => course.id === courseBId), "Foreign Academy courses must not be selectable");
 
     const putResponse = await call("/api/student/preferences", {
       method: "PUT",
-      body: JSON.stringify({ selectedCourseId: platformCourse.id, examMonth: 9, examYear, dailyTargetMinutes: 120, timezone: "Asia/Kolkata", language: "English", reminderTime: "19:00" }),
+      body: JSON.stringify({ selectedCourseId: courseAId, examMonth: 9, examYear, dailyTargetMinutes: 120, timezone: "Asia/Kolkata", language: "English", reminderTime: "19:00" }),
     });
     assert.equal(putResponse.status, 200);
     const preference = await putResponse.json() as { selectedCourseId: string; examDate: string; examDatePrecision: string; dailyTargetMinutes: number; version: number };
-    assert.equal(preference.selectedCourseId, platformCourse.id);
+    assert.equal(preference.selectedCourseId, courseAId);
     assert.equal(preference.examDatePrecision, "MONTH");
     assert.equal(new Date(preference.examDate).getUTCDate(), 1, "Missing exam day must normalize to the first of the month");
     assert.equal(await prisma.academyCourseEnrollment.count({ where: { studentId: studentAId, courseId: platformCourse.id } }), 0, "Preference selection must not enroll or unlock a course");
@@ -466,7 +467,7 @@ test("learner personalisation is tenant-visible, month-normalized, versioned, an
     const bootstrapResponse = await call("/api/student/bootstrap");
     assert.equal(bootstrapResponse.status, 200);
     const bootstrap = await bootstrapResponse.json() as { preference: { selectedCourseId: string; dailyTargetMinutes: number } | null };
-    assert.equal(bootstrap.preference?.selectedCourseId, platformCourse.id);
+    assert.equal(bootstrap.preference?.selectedCourseId, courseAId);
     assert.equal(bootstrap.preference?.dailyTargetMinutes, 150);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -733,18 +734,18 @@ test("question and taxonomy lifecycle is tenant-scoped and sanitizes persisted r
   await expectCode(() => questions.getQuestion({ academyId: academyBId, actorId: adminAId }, created.id), "QUESTION_NOT_FOUND");
   await expectCode(() => questions.createQuestion({ academyId: academyAId, actorId: adminAId }, { kind: "NORMAL_DESCRIPTIVE", courseId: courseBId, questionHtml: "foreign" }), "COURSE_NOT_FOUND");
   const academyBQuestion = await questions.createQuestion({ academyId: academyBId, actorId: adminAId }, { kind: "NORMAL_DESCRIPTIVE", courseId: courseBId, questionHtml: "Academy B private question" });
-  const academyAList = await questions.listQuestions(scope, { page: 1, limit: 100, includeDeleted: true });
-  const academyBList = await questions.listQuestions({ academyId: academyBId, actorId: adminAId }, { page: 1, limit: 100, includeDeleted: true });
-  const platformList = await questions.listQuestions({ actorId: superId }, { page: 1, limit: 100, includeDeleted: true });
+  const academyAList = await questions.listQuestions(scope, { courseId: courseAId, page: 1, limit: 100, includeDeleted: true });
+  const academyBList = await questions.listQuestions({ academyId: academyBId, actorId: adminAId }, { courseId: courseBId, page: 1, limit: 100, includeDeleted: true });
+  const platformCourse = await prisma.course.findFirstOrThrow({ where: { academyId: null, status: "ACTIVE", deletedAt: null }, select: { id: true } });
+  const platformList = await questions.listQuestions({ actorId: superId }, { courseId: platformCourse.id, page: 1, limit: 100, includeDeleted: true });
   assert.ok(academyAList.data.some((question) => question.id === created.id));
   assert.ok(!academyAList.data.some((question) => question.id === academyBQuestion.id));
   assert.ok(academyBList.data.some((question) => question.id === academyBQuestion.id));
   assert.ok(!platformList.data.some((question) => question.id === created.id || question.id === academyBQuestion.id));
   await expectCode(() => questions.getTaxonomy(scope, courseBId), "COURSE_NOT_FOUND");
   const academyStudentList = await questions.listStudentQuestions(studentAId, academyAId, { page: 1, limit: 100 });
-  const directStudentList = await questions.listStudentQuestions(studentAId, undefined, { page: 1, limit: 100 });
   assert.ok(academyStudentList.data.some((question) => question.id === created.id));
-  assert.ok(!directStudentList.data.some((question) => question.id === created.id || question.id === academyBQuestion.id));
+  await expectCode(() => questions.listStudentQuestions(studentAId, undefined, { page: 1, limit: 100 }), "COURSE_NOT_FOUND");
   await expectCode(() => questions.listStudentQuestions(outsiderId, academyAId, { page: 1, limit: 100 }), "ACADEMY_QUESTIONS_NOT_FOUND");
 });
 
@@ -790,8 +791,8 @@ test("broadcast delivery, templates, durable jobs, retries, deduplication, and s
     const published = await academy.publishAcademyBroadcast(contextA, broadcast.id);
     assert.equal(published.delivery.status, "SENT");
     const concurrentRuns = await Promise.all([
-      runDueJobsOnce({ workerId: "phase4-worker-a", limit: 20 }),
-      runDueJobsOnce({ workerId: "phase4-worker-b", limit: 20 }),
+      runDueJobsOnce({ workerId: "phase4-worker-a", limit: 100 }),
+      runDueJobsOnce({ workerId: "phase4-worker-b", limit: 100 }),
     ]);
     const deliveryClaims = concurrentRuns.flat().filter((item) => item.id === published.delivery.jobId);
     assert.equal(deliveryClaims.length, 1, "Concurrent workers must claim a broadcast delivery job exactly once");
@@ -869,7 +870,7 @@ test("Super Admin Academy Details aggregates and operational rows are database-b
   assert.equal(detail.questions.length, questionCount);
   assert.equal(detail.broadcasts.length, broadcastCount);
   assert.equal(foreign.metrics.studentsCount, 1);
-  assert.equal(foreign.contentItems.length, 0);
+  assert.equal(foreign.contentItems.length, foreign.metrics.contentCount);
   assert.equal(foreign.questions.length, foreign.metrics.questionsCount);
   assert.equal(foreign.broadcasts.length, foreign.metrics.broadcastCount);
   const foreignQuestionIds = new Set((await prisma.question.findMany({ where: { academyId: academyBId, deletedAt: null }, select: { id: true } })).map((item) => item.id));
@@ -1077,7 +1078,8 @@ test("first-class Question Banks enforce tenant, type, file, purchase, and stude
     examName: "Integration", chapterName: chapter.name, conceptName: "Paid bank concept",
   });
   await questionBanks.setQuestionBankLifecycle(scope, paidBank.id, "publish");
-  assert.ok(!(await practice.listQuestionBanks(studentBId)).some((bank) => bank.id === paidBank.id), "Unpurchased paid Question Banks must remain hidden");
+  const lockedPaidBank = (await practice.listQuestionBanks(studentBId)).find((bank) => bank.id === paidBank.id);
+  assert.ok(lockedPaidBank?.locked && lockedPaidBank.purchaseRequired, "Unpurchased paid Question Banks must remain locked");
   const paidOrder = await prisma.order.create({ data: { orderNumber: `QB-${suffix}`, userId: studentAId, courseId: courseAId, subtotal: "399.00", totalAmount: "399.00", status: "PAID", accessStatus: "GRANTED", paidAt: new Date(), receiptNumber: `QB-RCP-${suffix}`, items: { create: { questionBankId: paidBank.id, resourceType: "QUESTION_BANK", titleSnapshot: paidBank.name, unitPrice: "399.00", quantity: 1, totalPrice: "399.00" } } } });
   await prisma.entitlement.create({ data: { userId: studentAId, resourceType: "QUESTION_BANK", questionBankId: paidBank.id, resourceTitle: paidBank.name, source: "PURCHASE", orderId: paidOrder.id, status: "ACTIVE" } });
   assert.ok((await practice.listQuestionBanks(studentAId)).some((bank) => bank.id === paidBank.id), "A paid order entitlement must reveal its Question Bank");
@@ -1206,8 +1208,8 @@ test("secure practice hides answers, enforces Free/Paid retry policy, timers, id
   assert.ok(tracker.chapters.some((chapter) => chapter.chapterId === paidChapter.id && chapter.questionsSolved >= 1 && chapter.attempts >= 2));
 
   await prisma.entitlement.update({ where: { id: bankEntitlement.id }, data: { status: "REVOKED", revokedAt: new Date() } });
-  const afterRevocation = await practice.previewPracticeSet(studentAId, { sourceKind: "ARCHIVE", chapterId: paidChapter.id, collection: "RTP", answerFormat: "MCQ", questionCount: 1 });
-  assert.equal(afterRevocation.eligibleQuestionCount, 1, "Revoking a PDF package must not remove free practice questions");
+  const afterRevocation = await practice.previewPracticeSet(studentAId, { sourceKind: "ARCHIVE", mode: "REVISIT", chapterId: paidChapter.id, collection: "RTP", answerFormat: "MCQ", questionCount: 1 });
+  assert.equal(afterRevocation.eligibleQuestionCount, 1, "Revoking a PDF package must not remove an answered free question from Revisit");
 
   const timerSession = await practice.createPracticeSession(studentAId, { sourceKind: "ARCHIVE", subjectId: subject.id, chapterId: freeChapter.id, answerFormat: "MCQ", questionCount: 1, timerSeconds: 30 });
   await prisma.practiceSession.update({ where: { id: timerSession.id }, data: { expiresAt: new Date(Date.now() - 1000) } });

@@ -205,14 +205,14 @@ async function runAdmissionsTestSuite() {
     const largeRows = new Array(1001).fill({ name: 'Test', email: 'test@example.com' });
     await assert.rejects(
       async () => admissionsService.validateBulkImport(tenantCtxA, largeRows),
-      /exceeds maximum limit/
+      /cannot exceed 1,000 rows/
     );
   });
 
   await test('9. Non-array rows input throws error', async () => {
     await assert.rejects(
       async () => admissionsService.validateBulkImport(tenantCtxA, 'invalid' as any),
-      /Invalid input format/
+      /Expected an array of student rows/
     );
   });
 
@@ -393,7 +393,7 @@ async function runAdmissionsTestSuite() {
 
     await assert.rejects(
       async () => admissionsService.claimAdmissionCode(student1UserId, expiredCode.code),
-      /Invalid or unavailable admission code/
+      /Academy code has expired/
     );
   });
 
@@ -415,7 +415,7 @@ async function runAdmissionsTestSuite() {
 
       await assert.rejects(
         async () => admissionsService.claimAdmissionCode(student1UserId, codeToRevoke.code),
-        /Invalid or unavailable admission code/
+        /Academy code is no longer active/
       );
     }
   });
@@ -442,7 +442,7 @@ async function runAdmissionsTestSuite() {
       // Claim 2 -> Rejected
       await assert.rejects(
         async () => admissionsService.claimAdmissionCode(studentB, capCode.code),
-        /Invalid or unavailable admission code/
+        /Academy code has reached its usage limit/
       );
     }
   });

@@ -10,6 +10,7 @@ import * as reportViewer from "../services/monthlyReportViewerService.js";
 import { deliverMonthlyReportEmail } from "../services/monthlyReportEmailService.js";
 import type { EmailMessage } from "../integrations/email-provider.js";
 import { integrationDatabaseEnabled } from "../tests/integration-database-guard.js";
+import { getConfig } from "../config/env.js";
 
 const enabled = integrationDatabaseEnabled("RUN_BACKEND_INTEGRATION");
 const suffix = randomUUID().slice(0, 8);
@@ -23,9 +24,12 @@ let previousMonth = "";
 let purchaseMonth = "";
 const storedObjects = new Map<string, Buffer>();
 const sentEmails: EmailMessage[] = [];
+let originalFakePaymentEnabled = false;
 
 before(async () => {
   if (!enabled) return;
+  originalFakePaymentEnabled = getConfig().payment.fakePaymentEnabled;
+  getConfig().payment.fakePaymentEnabled = true;
   const role = await prisma.role.upsert({ where: { key: "student" }, create: { key: "student", name: "Student", description: "Learner role" }, update: {}, select: { id: true } });
   userId = randomUUID(); otherUserId = randomUUID(); courseId = randomUUID(); noteId = randomUUID();
   const previous = new Date(); previous.setUTCMonth(previous.getUTCMonth() - 1, 10); previousMonth = databaseDateKey(previous).slice(0, 7);
@@ -64,6 +68,7 @@ after(async () => {
   await prisma.course.delete({ where: { id: courseId } });
   await prisma.user.delete({ where: { id: otherUserId } });
   providerTestHooks.reset();
+  getConfig().payment.fakePaymentEnabled = originalFakePaymentEnabled;
   storedObjects.clear();
   await prisma.$disconnect();
 });

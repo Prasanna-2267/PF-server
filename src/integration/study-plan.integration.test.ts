@@ -18,10 +18,10 @@ before(async () => {
   const role = await prisma.role.upsert({ where: { key: "student" }, create: { key: "student", name: "Student", description: "Learner role" }, update: {}, select: { id: true } });
   userId = randomUUID(); courseId = randomUUID(); noteA = randomUUID(); noteB = randomUUID();
   await prisma.user.create({ data: { id: userId, email: `plan-${suffix}@test.local`, fullName: "Plan Learner", roleId: role.id } });
-  await prisma.course.create({ data: { id: courseId, slug: `plan-${suffix}`, code: `P${suffix.slice(0, 6)}`, name: "Plan Course" } });
+  await prisma.course.create({ data: { id: courseId, slug: `plan-${suffix}`, code: `P${suffix.slice(0, 6)}`, name: `Plan Course ${suffix}` } });
   await prisma.contentItem.createMany({ data: [
-    { id: noteA, courseId, kind: "FILE", name: "First Note", mimeType: "application/pdf", displayOrder: 1 },
-    { id: noteB, courseId, kind: "FILE", name: "Second Note", mimeType: "application/pdf", displayOrder: 2 },
+    { id: noteA, courseId, kind: "FILE", name: "First Note", mimeType: "application/pdf", storagePath: `integration/study-plan/${noteA}.pdf`, displayOrder: 1 },
+    { id: noteB, courseId, kind: "FILE", name: "Second Note", mimeType: "application/pdf", storagePath: `integration/study-plan/${noteB}.pdf`, displayOrder: 2 },
   ] });
   await prisma.learnerPreference.create({ data: { userId, selectedCourseId: courseId, timezone: "UTC", dailyTargetMinutes: 60, examDate: new Date(Date.now() + 60 * 86_400_000), examDatePrecision: "DAY" } });
   await prisma.studyWorkloadEstimate.create({ data: { contentItemId: noteA, estimatedReadingMinutes: 50, estimatedRevisionMinutes: 20 } });
