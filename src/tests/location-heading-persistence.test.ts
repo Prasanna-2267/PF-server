@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { updateLocation, getLocation, type ContentScope } from "../services/contentService.js";
+import { integrationDatabaseEnabled } from "./integration-database-guard.js";
 
-test("getLocation returns 'Untitled Page' for unconfigured courses", async () => {
+const databaseEnabled = integrationDatabaseEnabled("RUN_BACKEND_INTEGRATION");
+
+test("getLocation returns 'Untitled Page' for unconfigured courses", { skip: !databaseEnabled }, async () => {
   const scope: ContentScope = { actorId: "00000000-0000-0000-0000-000000000001" };
   const mockCourseId = "00000000-0000-0000-0000-000000000002";
   

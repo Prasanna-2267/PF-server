@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { providerTestHooks } from "../integrations/provider-registry.js";
 import type { StorageProvider, UploadIntent } from "../integrations/storage-provider.js";
 import * as merchandisingService from "../services/merchandisingService.js";
+import { integrationDatabaseEnabled } from "./integration-database-guard.js";
 
-describe("Store Management & Merchandising Engine Verification", { concurrency: false }, () => {
+const databaseEnabled = integrationDatabaseEnabled("RUN_BACKEND_INTEGRATION");
+
+describe("Store Management & Merchandising Engine Verification", { concurrency: false, skip: !databaseEnabled }, () => {
   before(() => {
     const inMemoryStorageProvider: StorageProvider = {
       async createUploadUrl(intent: UploadIntent) {
