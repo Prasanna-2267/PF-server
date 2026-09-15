@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Compiled output and generated clients
+dist/
+build/
+coverage/
+generated/prisma/
+*.tsbuildinfo
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs and process files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+*.pid.lock
+
+# Runtime storage and user uploads
+uploads/
+storage/
+test-storage/
+
+# Temporary files and caches
+.tmp/
+.tmp-*/
+tmp/
+temp/
+.cache/
+.eslintcache
+
+# Local database files; Prisma schema and migrations remain tracked
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Local IDE, OS and assistant tooling
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+.vscode/
+.idea/
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
+
+# Test and diagnostic artifacts
+test-results/
+playwright-report/
+*.lcov
+crash-*.json
