@@ -34,10 +34,10 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-# Generated Prisma client code is copied from the build stage. Excluding dev
-# and optional peer dependencies keeps the Prisma CLI/config toolchain and its
-# deepmerge-ts advisory out of the application runtime.
-RUN npm ci --omit=dev --omit=optional --ignore-scripts \
+# Generated Prisma client code is copied from the build stage. Keep production
+# optional dependencies because @napi-rs/canvas provides its platform-native
+# binding through an optional package used by Monthly Report PDF generation.
+RUN npm ci --omit=dev --ignore-scripts \
     && npm cache clean --force
 
 COPY --from=build --chown=node:node /app/dist ./dist
