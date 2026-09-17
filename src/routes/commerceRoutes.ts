@@ -16,15 +16,21 @@ const checkoutItemSchema = z.object({
   resourceId: z.string().uuid(),
 }).strict();
 
-checkoutRouter.post("/", asyncRoute(async (req, res) => {
-  const body = z.object({
+const checkoutBodySchema = z.object({
     // packageIds remains supported for the existing Admin/web clients.
     packageIds: z.array(z.string().uuid()).min(1).max(50).optional(),
     items: z.array(checkoutItemSchema).min(1).max(50).optional(),
     couponCode: z.string().trim().max(40).optional(),
   }).strict().superRefine((value, context) => {
     if (!value.packageIds?.length && !value.items?.length) context.addIssue({ code: "custom", path: ["items"], message: "At least one checkout item is required." });
-  }).parse(req.body);
+  });
+
+checkoutRouter.post("/quote", asyncRoute(async (req, res) => {
+  res.json(await commerce.previewCheckout(req.auth!.userId, checkoutBodySchema.parse(req.body)));
+}));
+
+checkoutRouter.post("/", asyncRoute(async (req, res) => {
+  const body = checkoutBodySchema.parse(req.body);
   res.status(201).json(await commerce.createCheckout(req.auth!.userId, body, idempotencyKey(req.get("idempotency-key"))));
 }));
 

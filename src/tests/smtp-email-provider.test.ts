@@ -47,7 +47,8 @@ test("SMTP renderer supports escaped Academy announcements and contact submissio
   });
   assert.match(announcement.subject, /Schedule update/);
   assert.match(announcement.html, /Learner &lt;One&gt;/);
-  assert.match(announcement.html, /Powered by <strong>NeuralWeb Labs/);
+  assert.match(announcement.html, /Powered by <strong[^>]*>NeuralWeb Labs/);
+  assert.match(announcement.html, /href="http:\/\/neuralweblabs\.com\/"/);
 
   const contact = renderEmailMessage({
     to: "support@example.test",
@@ -151,4 +152,31 @@ test("lifecycle emails include refund and old-to-new security details safely", (
   });
   assert.match(device.text, /Old phone \/ ANDROID/);
   assert.match(device.text, /New phone \/ IOS/);
+});
+
+test("purchase receipt email uses the premium responsive receipt and linked branding", () => {
+  const rendered = renderEmailMessage({
+    to: "learner@example.test",
+    template: "purchase-invoice",
+    variables: {
+      userName: "Learner <One>",
+      orderNumber: "PF-20260917-ABC",
+      receiptNumber: "RCP-20260917-XYZ",
+      paidAt: "2026-09-17T15:00:22.891Z",
+      courseName: "Class 12",
+      currency: "INR",
+      subtotal: "600.00",
+      discount: "120.00",
+      total: "480.00",
+      items: "Premium note × 1 — INR 600.00",
+    },
+    idempotencyKey: "purchase:test",
+  });
+
+  assert.match(rendered.html, /OFFICIAL PAYMENT RECEIPT/);
+  assert.match(rendered.html, /Coupon discount/);
+  assert.match(rendered.html, /INR 480\.00/);
+  assert.match(rendered.html, /href="http:\/\/neuralweblabs\.com\/"/);
+  assert.match(rendered.html, /Learner &lt;One&gt;/);
+  assert.doesNotMatch(rendered.html, /Learner <One>/);
 });

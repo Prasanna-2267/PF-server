@@ -49,7 +49,7 @@ export async function verifyOrBindStudentDevice(
     // replacement window expires, another approval is required.
     const replacementPending = binding.resetApprovedAt && !binding.resetConsumedAt;
     if (replacementPending) {
-      throw forbidden("DEVICE_CHANGE_PENDING", "A device change has been approved. Sign in from the replacement device to complete the change.");
+      throw forbidden("DEVICE_CHANGE_PENDING", "This is still the currently linked device. Sign in from the different replacement device to complete the approved device change.");
     }
     return tx.studentDeviceBinding.update({ where: { userId }, data: { lastVerifiedAt: now, deviceName: metadata.deviceName?.slice(0, 128) ?? binding.deviceName, platform: metadata.platform ?? binding.platform } });
   }

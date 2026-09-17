@@ -59,14 +59,7 @@ type CheckoutInput = {
   couponCode?: string;
 };
 
-export async function createCheckout(userId: string, input: CheckoutInput, idempotencyKey: string) {
-  const hash = requestHash(input);
-  const existing = await prisma.idempotencyRecord.findUnique({ where: { scope_key: { scope: `checkout:${userId}`, key: idempotencyKey } } });
-  if (existing) {
-    if (existing.requestHash !== hash) throw conflict("IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used with a different request.");
-    if (existing.responseCode >= 400) throw new ApiError(existing.responseCode, "CHECKOUT_PREVIOUSLY_FAILED", "The prior checkout attempt with this idempotency key failed.");
-    return existing.responseBody;
-  }
+async function resolveCheckoutPricing(userId: string, input: CheckoutInput) {
   const packageIds = [...new Set([...(input.packageIds ?? []), ...(input.items ?? []).filter((item) => item.resourceType === "PACKAGE").map((item) => item.resourceId)])];
   const contentIds = [...new Set((input.items ?? []).filter((item) => item.resourceType === "CONTENT").map((item) => item.resourceId))];
   const questionBankIds = [...new Set((input.items ?? []).filter((item) => item.resourceType === "QUESTION_BANK").map((item) => item.resourceId))];
@@ -109,6 +102,29 @@ export async function createCheckout(userId: string, input: CheckoutInput, idemp
     discount = coupon.discountType === "PERCENT" ? Math.min(subtotal, subtotal * Number(coupon.discountValue) / 100) : Math.min(subtotal, Number(coupon.discountValue));
   }
   const total = Math.max(0, Number((subtotal - discount).toFixed(2)));
+  return { packageIds, contentIds, questionBankIds, packages, contentItems, questionBanks, courseIds, subtotal, coupon, discount, total };
+}
+
+export async function previewCheckout(userId: string, input: CheckoutInput) {
+  const { subtotal, coupon, discount, total } = await resolveCheckoutPricing(userId, input);
+  return {
+    currency: "INR" as const,
+    subtotal,
+    discountAmount: discount,
+    totalAmount: total,
+    couponCode: coupon?.code ?? null,
+  };
+}
+
+export async function createCheckout(userId: string, input: CheckoutInput, idempotencyKey: string) {
+  const hash = requestHash(input);
+  const existing = await prisma.idempotencyRecord.findUnique({ where: { scope_key: { scope: `checkout:${userId}`, key: idempotencyKey } } });
+  if (existing) {
+    if (existing.requestHash !== hash) throw conflict("IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used with a different request.");
+    if (existing.responseCode >= 400) throw new ApiError(existing.responseCode, "CHECKOUT_PREVIOUSLY_FAILED", "The prior checkout attempt with this idempotency key failed.");
+    return existing.responseBody;
+  }
+  const { packages, contentItems, questionBanks, courseIds, subtotal, coupon, discount, total } = await resolveCheckoutPricing(userId, input);
   const fakePaymentEnabled = getConfig().payment.fakePaymentEnabled;
   const provider = total > 0 && !fakePaymentEnabled ? getPaymentProvider() : null;
   let order;
@@ -124,7 +140,10 @@ export async function createCheckout(userId: string, input: CheckoutInput, idemp
       ...questionBanks.map((item) => ({ questionBankId: item.id, resourceType: LearningResourceType.QUESTION_BANK, titleSnapshot: item.name, unitPrice: item.price, quantity: 1, totalPrice: item.price })),
     ] } } });
     if (coupon) await tx.couponRedemption.create({ data: { couponId: coupon.id, userId, orderId: created.id, discountAmount: discount } });
-    if (total === 0) await grantOrderEntitlements(tx, created.id);
+    if (total === 0) {
+      await grantOrderEntitlements(tx, created.id);
+      await enqueuePurchaseInvoiceEmail(tx, created.id);
+    }
     else await tx.payment.create({ data: { orderId: created.id, provider: fakePaymentEnabled ? "test" : "configured", amount: total, currency: "INR", status: "PENDING", paymentMethod: fakePaymentEnabled ? "FAKE_TEST_PAYMENT" : null } });
     await tx.idempotencyRecord.create({ data: { scope: `checkout:${userId}`, key: idempotencyKey, requestHash: hash, responseCode: 201, responseBody: { orderId: created.id, orderNumber: created.orderNumber, status: created.status, currency: created.currency, subtotal, discountAmount: discount, totalAmount: total, paymentMode: fakePaymentEnabled && total > 0 ? "FAKE_TEST" : total === 0 ? "COMPLIMENTARY" : "PROVIDER", requiresFakePayment: fakePaymentEnabled && total > 0 }, expiresAt: new Date(Date.now() + 24 * 60 * 60_000) } });
     return created;

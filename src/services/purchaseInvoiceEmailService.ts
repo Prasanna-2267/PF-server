@@ -17,7 +17,7 @@ export function enqueuePurchaseInvoiceEmail(tx: Prisma.TransactionClient, orderI
 export async function deliverPurchaseInvoiceEmail(value: unknown) {
   const { orderId } = payloadSchema.parse(value);
   const order = await prisma.order.findFirst({
-    where: { id: orderId, status: "PAID", totalAmount: { gt: 0 } },
+    where: { id: orderId, status: "PAID" },
     include: { user: { select: { email: true, fullName: true } }, course: { select: { name: true } }, items: { orderBy: { id: "asc" } } },
   });
   if (!order) return { skipped: true };

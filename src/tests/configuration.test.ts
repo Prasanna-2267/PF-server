@@ -33,6 +33,21 @@ test("production rejects insecure CORS origins", () => {
   }), /HTTPS/);
 });
 
+test("production permits HTTP only for explicit loopback development origins", () => {
+  const config = parseEnvironment({
+    ...validEnvironment,
+    NODE_ENV: "production",
+    CORS_ALLOWED_ORIGINS: "https://www.parallaxflow.in,http://localhost:5173,http://127.0.0.1:8081",
+  });
+  assert.equal(config.corsOrigins.has("http://localhost:5173"), true);
+  assert.equal(config.corsOrigins.has("http://127.0.0.1:8081"), true);
+  assert.throws(() => parseEnvironment({
+    ...validEnvironment,
+    NODE_ENV: "production",
+    CORS_ALLOWED_ORIGINS: "http://192.168.1.10:5173",
+  }), /HTTPS/);
+});
+
 test("transactional email branding accepts explicit public production URLs", () => {
   const config = parseEnvironment({
     ...validEnvironment,
@@ -83,7 +98,7 @@ test("SMTP is a valid staged-registration email transport", () => {
   assert.equal(config.email.smtp.port, 465);
 });
 
-test("fake payment is explicit in development and rejected in production", () => {
+test("fake payment requires a second explicit pilot opt-in in production", () => {
   const development = parseEnvironment({ ...validEnvironment, NODE_ENV: "development", FAKE_PAYMENT_ENABLED: "true" });
   assert.equal(development.payment.fakePaymentEnabled, true);
   assert.throws(() => parseEnvironment({
@@ -91,5 +106,15 @@ test("fake payment is explicit in development and rejected in production", () =>
     NODE_ENV: "production",
     CORS_ALLOWED_ORIGINS: "https://example.test",
     FAKE_PAYMENT_ENABLED: "true",
-  }), /FAKE_PAYMENT_ENABLED.*must be false in production/);
+  }), /FAKE_PAYMENT_ENABLED.*requires PILOT_FAKE_PAYMENT_ENABLED=true in production/);
+
+  const pilot = parseEnvironment({
+    ...validEnvironment,
+    NODE_ENV: "production",
+    CORS_ALLOWED_ORIGINS: "https://example.test",
+    FAKE_PAYMENT_ENABLED: "true",
+    PILOT_FAKE_PAYMENT_ENABLED: "true",
+  });
+  assert.equal(pilot.payment.fakePaymentEnabled, true);
+  assert.equal(pilot.payment.pilotFakePaymentEnabled, true);
 });

@@ -66,6 +66,7 @@ const environmentSchema = z
     PAYMENT_BEARER_TOKEN: optionalTrimmedString,
     PAYMENT_PROVIDER_NAME: z.string().trim().regex(/^[a-z0-9_-]{2,40}$/).default("http"),
     FAKE_PAYMENT_ENABLED: booleanFromString,
+    PILOT_FAKE_PAYMENT_ENABLED: booleanFromString,
     EXPO_PUSH_ENDPOINT: z.string().url().default("https://exp.host/--/api/v2/push/send"),
     EXPO_ACCESS_TOKEN: optionalTrimmedString,
   })
@@ -95,8 +96,12 @@ const environmentSchema = z
         if (!value[field]) context.addIssue({ code: "custom", path: [field], message: "is required when EMAIL_PROVIDER=smtp" });
       }
     }
-    if (value.NODE_ENV === "production" && value.FAKE_PAYMENT_ENABLED) {
-      context.addIssue({ code: "custom", path: ["FAKE_PAYMENT_ENABLED"], message: "must be false in production" });
+    if (value.NODE_ENV === "production" && value.FAKE_PAYMENT_ENABLED && !value.PILOT_FAKE_PAYMENT_ENABLED) {
+      context.addIssue({
+        code: "custom",
+        path: ["FAKE_PAYMENT_ENABLED"],
+        message: "requires PILOT_FAKE_PAYMENT_ENABLED=true in production",
+      });
     }
     const hasR2 = Boolean(value.R2_ACCESS_KEY_ID && value.R2_SECRET_ACCESS_KEY);
     if (value.STORAGE_DRIVER === "s3" && !hasR2) {
@@ -151,7 +156,7 @@ export interface AppConfig {
   };
   branding: { appUrl: string; logoUrl: string; supportEmail: string };
   sms: { webhookUrl?: string; bearerToken?: string };
-  payment: { providerName: string; checkoutUrl?: string; webhookSecret?: string; bearerToken?: string; fakePaymentEnabled: boolean };
+  payment: { providerName: string; checkoutUrl?: string; webhookSecret?: string; bearerToken?: string; fakePaymentEnabled: boolean; pilotFakePaymentEnabled: boolean };
   push: { endpoint: string; accessToken?: string };
 }
 
@@ -184,7 +189,8 @@ export const parseEnvironment = (input: NodeJS.ProcessEnv): AppConfig => {
     if (!/^https?:$/.test(parsed.protocol) || parsed.origin !== origin) {
       throw new Error(`Invalid CORS origin: ${origin}. Origins must not contain paths.`);
     }
-    if (env.NODE_ENV === "production" && parsed.protocol !== "https:") {
+    const isLoopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]";
+    if (env.NODE_ENV === "production" && parsed.protocol !== "https:" && !isLoopback) {
       throw new Error(`Production CORS origin must use HTTPS: ${origin}.`);
     }
   }
@@ -253,7 +259,14 @@ export const parseEnvironment = (input: NodeJS.ProcessEnv): AppConfig => {
       supportEmail: env.SUPPORT_EMAIL ?? env.CONTACT_RECIPIENT_EMAIL ?? senderAddress ?? "support@parallaxflow.com",
     },
     sms: { webhookUrl: env.SMS_WEBHOOK_URL, bearerToken: env.SMS_WEBHOOK_BEARER_TOKEN },
-    payment: { providerName: env.PAYMENT_PROVIDER_NAME, checkoutUrl: env.PAYMENT_CHECKOUT_URL, webhookSecret: env.PAYMENT_WEBHOOK_SECRET, bearerToken: env.PAYMENT_BEARER_TOKEN, fakePaymentEnabled: env.FAKE_PAYMENT_ENABLED },
+    payment: {
+      providerName: env.PAYMENT_PROVIDER_NAME,
+      checkoutUrl: env.PAYMENT_CHECKOUT_URL,
+      webhookSecret: env.PAYMENT_WEBHOOK_SECRET,
+      bearerToken: env.PAYMENT_BEARER_TOKEN,
+      fakePaymentEnabled: env.FAKE_PAYMENT_ENABLED,
+      pilotFakePaymentEnabled: env.PILOT_FAKE_PAYMENT_ENABLED,
+    },
     push: { endpoint: env.EXPO_PUSH_ENDPOINT, accessToken: env.EXPO_ACCESS_TOKEN },
   };
 };
