@@ -102,14 +102,14 @@ async function deliver(challenge: { id: string; purpose: AccountVerificationPurp
       : challenge.purpose === "MOBILE_CHANGE"
         ? "account-mobile-change-otp"
         : "account-email-change-otp";
-    await getEmailProvider().send({ to: recipient, template, variables: { name: fullName, code, expiresInMinutes: "15" }, idempotencyKey: `account:${challenge.id}:${otpHash(challenge.id, code).slice(0, 16)}` });
+    await getEmailProvider().send({ to: recipient, recipientSource: "registered-user", template, variables: { name: fullName, code, expiresInMinutes: "15" }, idempotencyKey: `account:${challenge.id}:${otpHash(challenge.id, code).slice(0, 16)}` });
     return {};
   } catch {
     throw serviceUnavailable("OTP_DELIVERY_UNAVAILABLE", "The verification code could not be delivered. Try again.");
   }
 }
 
-async function deliverEmailChangeCode(challengeId: string, fullName: string, recipientEmail: string, code: string) {
+async function deliverEmailChangeCode(challengeId: string, fullName: string, recipientEmail: string, code: string, recipientSource: "registered-user" | "verified-new-email") {
   const config = getConfig();
   if (config.environment !== "production") {
     const configured = config.email.driver === "smtp" || Boolean(config.email.webhookUrl);
@@ -118,6 +118,7 @@ async function deliverEmailChangeCode(challengeId: string, fullName: string, rec
   try {
     await getEmailProvider().send({
       to: recipientEmail,
+      recipientSource,
       template: "account-email-change-otp",
       variables: { name: fullName, code, expiresInMinutes: "15" },
       idempotencyKey: `account:${challengeId}:${otpHash(challengeId, code).slice(0, 16)}`,
@@ -163,7 +164,7 @@ export async function requestEmailChange(userId: string, rawEmail: string) {
     return tx.accountVerificationChallenge.create({ data: { id, userId, purpose: "EMAIL_CHANGE", targetValue, previousValue: user.email, otpHash: otpHash(id, code), sentAt: now, resendCount: 1, expiresAt: new Date(now.getTime() + TTL_MS) } });
   });
   try {
-    const delivery = await deliverEmailChangeCode(challenge.id, user.fullName, user.email, code);
+    const delivery = await deliverEmailChangeCode(challenge.id, user.fullName, user.email, code, "registered-user");
     return { challengeId: challenge.id, purpose: "EMAIL_CHANGE" as const, stage: "CURRENT_EMAIL" as const, maskedTarget: maskedEmail(user.email), expiresAt: challenge.expiresAt, resendAfter: new Date(now.getTime() + RESEND_COOLDOWN_MS), ...delivery };
   } catch (error) {
     await prisma.accountVerificationChallenge.update({ where: { id }, data: { cancelledAt: new Date(), otpHash: null } });
@@ -183,7 +184,7 @@ export async function verifyCurrentEmailForChange(userId: string, challengeId: s
   });
   if (claimed.count !== 1) throw conflict("CURRENT_EMAIL_ALREADY_VERIFIED", "The current email was already verified. Use the latest code sent to the replacement email.");
   try {
-    const delivery = await deliverEmailChangeCode(challenge.id, user.fullName, challenge.targetValue, nextCode);
+    const delivery = await deliverEmailChangeCode(challenge.id, user.fullName, challenge.targetValue, nextCode, "verified-new-email");
     return { challengeId: challenge.id, purpose: "EMAIL_CHANGE" as const, stage: "NEW_EMAIL" as const, maskedTarget: maskedEmail(challenge.targetValue), expiresAt: new Date(now.getTime() + TTL_MS), resendAfter: new Date(now.getTime() + RESEND_COOLDOWN_MS), ...delivery };
   } catch (error) {
     await prisma.accountVerificationChallenge.update({ where: { id: challenge.id }, data: { cancelledAt: new Date(), otpHash: null } });
@@ -205,7 +206,7 @@ export async function resendEmailChangeCode(userId: string, challengeId: string)
   });
   if (rotated.count !== 1) throw conflict("OTP_REPLACED", "A newer verification code was already requested.");
   try {
-    const delivery = await deliverEmailChangeCode(challenge.id, user.fullName, recipient, code);
+    const delivery = await deliverEmailChangeCode(challenge.id, user.fullName, recipient, code, challenge.currentVerifiedAt ? "verified-new-email" : "registered-user");
     return { challengeId: challenge.id, purpose: "EMAIL_CHANGE" as const, stage: challenge.currentVerifiedAt ? "NEW_EMAIL" as const : "CURRENT_EMAIL" as const, maskedTarget: maskedEmail(recipient), expiresAt: new Date(now.getTime() + TTL_MS), resendAfter: new Date(now.getTime() + RESEND_COOLDOWN_MS), ...delivery };
   } catch (error) {
     await prisma.accountVerificationChallenge.updateMany({ where: { id: challenge.id, otpHash: otpHash(challenge.id, code), consumedAt: null }, data: { cancelledAt: new Date(), otpHash: null } });

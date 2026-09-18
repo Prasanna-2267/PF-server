@@ -180,3 +180,27 @@ test("purchase receipt email uses the premium responsive receipt and linked bran
   assert.match(rendered.html, /Learner &lt;One&gt;/);
   assert.doesNotMatch(rendered.html, /Learner <One>/);
 });
+
+test("account lifecycle messages are standalone and contain no generated collapsed-content markup", () => {
+  const disabled = renderEmailMessage({
+    to: "learner@example.test",
+    template: "user-lifecycle",
+    variables: { userName: "Learner", event: "ACCOUNT_DISABLED", occurredAt: "2026-09-17T17:15:00.000Z" },
+    idempotencyKey: "disabled:test",
+  });
+  const enabled = renderEmailMessage({
+    to: "learner@example.test",
+    template: "user-lifecycle",
+    variables: { userName: "Learner", event: "ACCOUNT_ENABLED", occurredAt: "2026-09-17T17:20:00.000Z" },
+    idempotencyKey: "enabled:test",
+  });
+
+  assert.notEqual(disabled.subject, enabled.subject);
+  for (const rendered of [disabled, enabled]) {
+    assert.doesNotMatch(rendered.html, /\.\.\.|&hellip;|<blockquote|gmail_quote|display\s*:\s*none|visibility\s*:\s*hidden/i);
+    assert.match(rendered.html, /ACCOUNT NOTIFICATION/);
+    assert.match(rendered.html, /Changed at:/);
+    assert.match(rendered.html, /Powered by <strong[^>]*>NeuralWeb Labs/);
+    assert.ok(Buffer.byteLength(rendered.html, "utf8") < 102_400);
+  }
+});

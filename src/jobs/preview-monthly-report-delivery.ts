@@ -41,6 +41,7 @@ try {
 
   const sent = await getEmailProvider().send({
     to: user.email,
+    recipientSource: "registered-user",
     template: "monthly-report-ready",
     variables: { userName: user.fullName, reportMonth, reportUrl: new URL("monthly-report", getConfig().branding.appUrl).toString() },
     attachments: [{ fileName: `Parallax-Flow-Monthly-Report-${preview.report.yearMonth}.pdf`, contentType: "application/pdf", contentBase64: preview.pdf.toString("base64") }],

@@ -18,4 +18,14 @@ export async function getViewerStreamByTicket(viewerSessionId: string, ticket: s
   return notes.getViewerStreamByTicket(viewerSessionId, ticket, range);
 }
 
+export async function getViewerResponseByTicket(viewerSessionId: string, ticket: string, range?: string) {
+  if (await isReportSession(viewerSessionId)) {
+    return {
+      kind: "buffer" as const,
+      content: await reports.getMonthlyReportViewerContentByTicket(viewerSessionId, ticket),
+    };
+  }
+  return notes.getViewerResponseByTicket(viewerSessionId, ticket, range);
+}
+
 export const safeInlineFileName = notes.safeInlineFileName;

@@ -65,6 +65,7 @@ export async function deliverAccountCreatedEmail(payloadValue: unknown) {
   try {
     return await getEmailProvider().send({
       to: payload.recipientEmail,
+      recipientSource: "registered-user",
       template: "account-created",
       variables: {
         userName: payload.userName,

@@ -55,6 +55,7 @@ const environmentSchema = z
     SMTP_USER: optionalTrimmedString,
     SMTP_PASSWORD: optionalTrimmedString,
     SMTP_FROM: optionalTrimmedString,
+    SMTP_REPLY_TO: optionalTrimmedString,
     CONTACT_RECIPIENT_EMAIL: optionalTrimmedString,
     PUBLIC_APP_URL: optionalTrimmedString,
     PUBLIC_LOGO_URL: optionalTrimmedString,
@@ -152,7 +153,7 @@ export interface AppConfig {
     webhookUrl?: string;
     bearerToken?: string;
     contactRecipient?: string;
-    smtp: { host?: string; port: number; secure: boolean; user?: string; password?: string; from?: string };
+    smtp: { host?: string; port: number; secure: boolean; user?: string; password?: string; from?: string; replyTo?: string };
   };
   branding: { appUrl: string; logoUrl: string; supportEmail: string };
   sms: { webhookUrl?: string; bearerToken?: string };
@@ -251,7 +252,7 @@ export const parseEnvironment = (input: NodeJS.ProcessEnv): AppConfig => {
       webhookUrl: env.EMAIL_WEBHOOK_URL,
       bearerToken: env.EMAIL_WEBHOOK_BEARER_TOKEN,
       contactRecipient: env.CONTACT_RECIPIENT_EMAIL,
-      smtp: { host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE, user: env.SMTP_USER, password: env.SMTP_PASSWORD, from: env.SMTP_FROM },
+      smtp: { host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE, user: env.SMTP_USER, password: env.SMTP_PASSWORD, from: env.SMTP_FROM, replyTo: env.SMTP_REPLY_TO },
     },
     branding: {
       appUrl: parsedAppUrl.toString(),

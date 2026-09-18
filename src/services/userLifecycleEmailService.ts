@@ -34,6 +34,7 @@ export async function deliverUserLifecycleEmail(value: unknown) {
   try {
     return await getEmailProvider().send({
       to: payload.recipientEmail,
+      recipientSource: "registered-user",
       template: "user-lifecycle",
       variables: { userName: payload.userName, event: payload.event, occurredAt: payload.occurredAt, ...payload.details },
       idempotencyKey: `user-lifecycle:${payload.deduplicationKey}`,

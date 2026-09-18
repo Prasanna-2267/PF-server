@@ -22,7 +22,7 @@ export async function deliverEmails(notificationId: string, academyId: string, s
     const delivery = await prisma.notificationDelivery.upsert({ where: { idempotencyKey }, create: { notificationId, academyId, recipientUserId: user.id, channel: "EMAIL", idempotencyKey, status: "PROCESSING", attemptCount: 1 }, update: { status: "PROCESSING", attemptCount: { increment: 1 }, lastError: null } });
     if (delivery.status === "DELIVERED") { results.push({ userId: user.id, delivered: true }); continue; }
     try {
-      const sent = await provider.send({ to: user.email, template: "academy-notification", variables: { name: user.fullName, title: notification.title, body: notification.body }, idempotencyKey });
+      const sent = await provider.send({ to: user.email, recipientSource: "registered-user", template: "academy-notification", variables: { name: user.fullName, title: notification.title, body: notification.body }, idempotencyKey });
       await prisma.notificationDelivery.update({ where: { id: delivery.id }, data: { status: "DELIVERED", deliveredAt: new Date(), providerMessageId: sent.providerMessageId } });
       results.push({ userId: user.id, delivered: true });
     } catch (error) {

@@ -1,5 +1,7 @@
 import nodemailer from "nodemailer";
 import type { EmailMessage, EmailProvider } from "./email-provider.js";
+import { assertSafeEmailRecipient, maskMailbox, normalizeMailbox } from "./email-delivery-safety.js";
+import { logger } from "../observability/logger.js";
 
 interface SmtpEmailProviderConfig {
   host: string;
@@ -8,6 +10,7 @@ interface SmtpEmailProviderConfig {
   user: string;
   password: string;
   from: string;
+  replyTo?: string;
 }
 
 const escapeHtml = (value: string) => value
@@ -28,7 +31,7 @@ const NEURALWEB_LABS_URL = "http://neuralweblabs.com/";
 
 const renderPoweredByFooter = () => `<div style="margin-top:34px;padding:24px 20px;background:#111b2d;border-radius:14px;text-align:center">
   <a href="${NEURALWEB_LABS_URL}" target="_blank" rel="noopener noreferrer" style="display:inline-block;color:#8bb8ff;font-size:12px;font-weight:700;letter-spacing:.3px;text-decoration:none">Powered by <strong style="color:#ffffff;font-weight:800">NeuralWeb Labs</strong></a>
-  <div style="margin-top:8px;color:#8793a8;font-size:10px;line-height:16px">&copy; ${new Date().getUTCFullYear()} Parallax Flow. All rights reserved.</div>
+  <div style="margin-top:8px;color:#8793a8;font-size:10px;line-height:16px">&copy; ${new Date().getUTCFullYear()} Parallax Learning Hub LLP. All rights reserved.</div>
 </div>`;
 
 const renderTransactionalLayout = (input: { eyebrow: string; title: string; intro: string; bodyHtml: string }) =>
@@ -68,7 +71,7 @@ const renderAccountCreatedEmail = (message: EmailMessage): { subject: string; te
 
   return {
     subject: "Welcome to Parallax Flow — Your Account Is Ready",
-    text: `PARALLAX FLOW\n\nWelcome, ${userName}!\n\nYour Parallax Flow account has been successfully created. You can now sign in and start using your account.\n\nACCOUNT DETAILS\nName: ${userName}\nEmail: ${userEmail}\nAccount created: ${createdAt}\n${academyText}\nGo to Parallax Flow: ${appUrl}\n\nWHAT YOU CAN DO\nOnce you sign in, you can access the features available to your account, including your courses, learning content, practice and other available Parallax Flow features.\n\nSECURITY\nIf you did not create this account, contact Parallax Flow support immediately.\n\nNeed help? Contact ${supportEmail}.\n\nParallax Flow\nPowered by NeuralWeb Labs\n© ${currentYear} Parallax Flow. All rights reserved.`,
+    text: `PARALLAX FLOW\n\nWelcome, ${userName}!\n\nYour Parallax Flow account has been successfully created. You can now sign in and start using your account.\n\nACCOUNT DETAILS\nName: ${userName}\nEmail: ${userEmail}\nAccount created: ${createdAt}\n${academyText}\nGo to Parallax Flow: ${appUrl}\n\nWHAT YOU CAN DO\nOnce you sign in, you can access the features available to your account, including your courses, learning content, practice and other available Parallax Flow features.\n\nSECURITY\nIf you did not create this account, contact Parallax Flow support immediately.\n\nNeed help? Contact ${supportEmail}.\n\nParallax Flow\nPowered by NeuralWeb Labs\n© ${currentYear} Parallax Learning Hub LLP. All rights reserved.`,
     html: `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to Parallax Flow</title><style>@media only screen and (max-width:620px){.pf-shell{width:100%!important}.pf-pad{padding-left:20px!important;padding-right:20px!important}.pf-title{font-size:27px!important;line-height:34px!important}}</style></head>
 <body style="margin:0;padding:0;background:#f3f5f8;color:#17191d;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%">
@@ -81,7 +84,7 @@ ${academyHtml}
 <tr><td class="pf-pad" align="center" style="padding:0 32px 34px"><table role="presentation" cellspacing="0" cellpadding="0"><tr><td align="center" bgcolor="#f2bd4f" style="border-radius:12px"><a href="${safe.appUrl}" target="_blank" style="display:inline-block;padding:15px 28px;color:#17191d;font-size:14px;font-weight:700;text-decoration:none;border-radius:12px">Go to Parallax Flow&nbsp; →</a></td></tr></table></td></tr>
 <tr><td class="pf-pad" style="padding:28px 32px;border-top:1px solid #e9ebef"><p style="margin:0 0 8px;color:#1f232a;font-size:13px;font-weight:700;letter-spacing:.5px">WHAT YOU CAN DO</p><p style="margin:0;color:#626873;font-size:13px;line-height:21px">Access the features available to your account, including courses, learning content, practice, progress and other Parallax Flow tools.</p></td></tr>
 <tr><td class="pf-pad" style="padding:0 32px 28px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-left:3px solid #d9b55f;background:#fffaf0"><tr><td style="padding:15px 17px"><p style="margin:0 0 5px;color:#3a3d44;font-size:12px;font-weight:700">SECURITY</p><p style="margin:0;color:#6b707a;font-size:12px;line-height:19px">If you did not create this account, contact Parallax Flow support immediately. We will never ask you to share a password or verification code by email.</p></td></tr></table></td></tr>
-<tr><td class="pf-pad" align="center" style="padding:24px 32px 30px;background:#111b2d;border-top:1px solid #34415a"><p style="margin:0 0 10px;color:#aebbd0;font-size:12px;line-height:18px">Need help? <a href="mailto:${safe.supportEmail}" style="color:#d9b55f;font-weight:700;text-decoration:none">${safe.supportEmail}</a></p><a href="${NEURALWEB_LABS_URL}" target="_blank" rel="noopener noreferrer" style="color:#8bb8ff;font-size:12px;font-weight:700;text-decoration:none">Powered by <strong style="color:#ffffff">NeuralWeb Labs</strong></a><p style="margin:8px 0 0;color:#8793a8;font-size:10px;line-height:16px">&copy; ${safe.currentYear} Parallax Flow. All rights reserved.</p></td></tr>
+<tr><td class="pf-pad" align="center" style="padding:24px 32px 30px;background:#111b2d;border-top:1px solid #34415a"><p style="margin:0 0 10px;color:#aebbd0;font-size:12px;line-height:18px">Need help? <a href="mailto:${safe.supportEmail}" style="color:#d9b55f;font-weight:700;text-decoration:none">${safe.supportEmail}</a></p><a href="${NEURALWEB_LABS_URL}" target="_blank" rel="noopener noreferrer" style="color:#8bb8ff;font-size:12px;font-weight:700;text-decoration:none">Powered by <strong style="color:#ffffff">NeuralWeb Labs</strong></a><p style="margin:8px 0 0;color:#8793a8;font-size:10px;line-height:16px">&copy; ${safe.currentYear} Parallax Learning Hub LLP. All rights reserved.</p></td></tr>
 </table></td></tr></table></body></html>`,
   };
 };
@@ -211,20 +214,32 @@ export class SmtpEmailProvider implements EmailProvider {
   }
 
   async send(message: EmailMessage): Promise<{ providerMessageId: string }> {
+    assertSafeEmailRecipient(message, this.config.from);
     const rendered = renderEmailMessage(message);
-    const result = await this.transporter.sendMail({
-      from: this.config.from,
-      to: message.to,
-      subject: rendered.subject,
-      text: rendered.text,
-      html: rendered.html,
-      attachments: message.attachments?.map((attachment) => ({
-        filename: attachment.fileName,
-        contentType: attachment.contentType,
-        content: Buffer.from(attachment.contentBase64, "base64"),
-      })),
-      headers: { "X-Idempotency-Key": message.idempotencyKey },
-    });
-    return { providerMessageId: result.messageId };
+    const sender = normalizeMailbox(this.config.from);
+    const fields = { provider: "smtp", template: message.template, recipient: maskMailbox(message.to), recipientSource: message.recipientSource, sender, senderDomain: sender.split("@")[1] };
+    logger.info("email.delivery_started", fields);
+    try {
+      const result = await this.transporter.sendMail({
+        from: this.config.from,
+        replyTo: this.config.replyTo,
+        to: message.to,
+        subject: rendered.subject,
+        text: rendered.text,
+        html: rendered.html,
+        attachments: message.attachments?.map((attachment) => ({
+          filename: attachment.fileName,
+          contentType: attachment.contentType,
+          content: Buffer.from(attachment.contentBase64, "base64"),
+        })),
+        headers: { "X-Idempotency-Key": message.idempotencyKey },
+      });
+      logger.info("email.delivery_succeeded", { ...fields, providerMessageId: result.messageId });
+      return { providerMessageId: result.messageId };
+    } catch (error) {
+      const failure = error as { name?: unknown; code?: unknown; command?: unknown; responseCode?: unknown };
+      logger.error("email.delivery_failed", undefined, { ...fields, errorName: failure.name, errorCode: failure.code, command: failure.command, responseCode: failure.responseCode });
+      throw error;
+    }
   }
 }

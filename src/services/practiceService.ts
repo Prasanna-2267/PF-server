@@ -670,7 +670,7 @@ export async function setMarkedForReview(userId: string, sessionId: string, sess
 export async function completePracticeSession(userId: string, sessionId: string) {
   const session = await ownedSession(userId, sessionId);
   if (session.status === "EXPIRED") throw conflict("SESSION_EXPIRED", "This practice timer has expired.");
-  if (session.status === "COMPLETED") return getPracticeSession(userId, sessionId);
+  if (session.status === "COMPLETED") return getPracticeResult(userId, sessionId);
   await prisma.practiceSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
   const completionTimingReport = session.timerSeconds === null ? await prisma.practiceSessionQuestion.findMany({
     where: { sessionId: session.id, attempts: { some: { userId, durationMs: { not: null } } } },
@@ -681,14 +681,12 @@ export async function completePracticeSession(userId: string, sessionId: string)
     sequence: question.sequence,
     durationMs: question.attempts.reduce((total, attempt) => total + (attempt.durationMs ?? 0), 0),
   }))) : null;
-  try {
-    await generateStudyPlan(userId, undefined, true);
-  } catch (error) {
+  void generateStudyPlan(userId, undefined, true).catch((error) => {
     // Practice completion is authoritative. A derived plan can be regenerated on
     // the learner's next study-plan request, so it must not roll back the session.
     logger.error("practice.study_plan_refresh_failed", error, { userId, sessionId });
-  }
-  const completed = await getPracticeSession(userId, sessionId);
+  });
+  const completed = await getPracticeResult(userId, sessionId);
   return completionTimingReport ? { ...completed, completionTimingReport } : completed;
 }
 

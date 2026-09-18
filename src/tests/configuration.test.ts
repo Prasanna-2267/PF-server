@@ -91,11 +91,13 @@ test("SMTP is a valid staged-registration email transport", () => {
     SMTP_USER: "mailer@example.test",
     SMTP_PASSWORD: "provider-app-password",
     SMTP_FROM: "Parallax Flow <mailer@example.test>",
+    SMTP_REPLY_TO: "support@example.test",
   });
 
   assert.equal(config.email.driver, "smtp");
   assert.equal(config.email.smtp.secure, true);
   assert.equal(config.email.smtp.port, 465);
+  assert.equal(config.email.smtp.replyTo, "support@example.test");
 });
 
 test("fake payment requires a second explicit pilot opt-in in production", () => {

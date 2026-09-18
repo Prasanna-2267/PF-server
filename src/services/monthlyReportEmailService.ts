@@ -31,6 +31,7 @@ export async function deliverMonthlyReportEmail(value: unknown) {
   const reportUrl = new URL("monthly-report", getConfig().branding.appUrl).toString();
   return getEmailProvider().send({
     to: report.user.email,
+    recipientSource: "registered-user",
     template: "monthly-report-ready",
     variables: { userName: report.user.fullName, reportMonth, reportUrl },
     attachments: [{ fileName: `Parallax-Flow-Monthly-Report-${report.yearMonth}.pdf`, contentType: "application/pdf", contentBase64: pdf.toString("base64") }],

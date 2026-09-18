@@ -80,6 +80,7 @@ const deliverOtp = async (challenge: { id: string; email: string; phone: string;
   try {
     await getEmailProvider().send({
       to: challenge.email,
+      recipientSource: "registration-challenge",
       template: "registration-otp",
       variables: { name: challenge.fullName, code, expiresInMinutes: String(CHALLENGE_TTL_MS / 60_000) },
       idempotencyKey: `registration:${challenge.id}:email:${otpHash(challenge.id, channel, code).slice(0, 16)}`,

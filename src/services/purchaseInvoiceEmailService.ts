@@ -23,6 +23,7 @@ export async function deliverPurchaseInvoiceEmail(value: unknown) {
   if (!order) return { skipped: true };
   return getEmailProvider().send({
     to: order.user.email,
+    recipientSource: "registered-user",
     template: "purchase-invoice",
     variables: {
       userName: order.user.fullName,

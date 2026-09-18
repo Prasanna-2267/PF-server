@@ -15,6 +15,7 @@ export const MAX_PROTECTED_NOTE_SOURCE_BYTES = 100 * 1024 * 1024;
 const SUPPORTED_NOTE_MIME_TYPES = [...ALLOWED_CONTENT_MIME_TYPES];
 type ProtectedContent = { buffer: Buffer; pageCount: number; fileName: string; mimeType: string; expiresAt: Date };
 const protectedPdfCache = new Map<string, { expiresAt: Date; content: ProtectedContent }>();
+const protectedPdfRenderInFlight = new Map<string, Promise<ProtectedContent>>();
 
 const viewerInclude = {
   contentItem: {
@@ -110,6 +111,11 @@ export async function createViewerSession(userId: string, userSessionId: string,
     data: { userId, userSessionId, contentItemId, traceId: randomBytes(12).toString("hex"), expiresAt },
     include: viewerInclude,
   });
+  if (note.mimeType === "application/pdf") {
+    // Begin the protected download and watermark pass while the app finishes opening the viewer.
+    // The content request joins this same in-flight render instead of doing the work again.
+    void renderViewerContent({ ...viewer, resourceExpiresAt: note.access.expiresAt }).catch(() => undefined);
+  }
   await recordNoteOpened(userId, contentItemId);
   return {
     viewerSessionId: viewer.id,
@@ -156,8 +162,8 @@ async function renderWatermarkedPdf(source: Buffer, email: string, traceId: stri
         y: height * yRatio,
         size: fontSize,
         font,
-        color: rgb(0.25, 0.32, 0.48),
-        opacity: 0.16,
+        color: rgb(0.18, 0.28, 0.55),
+        opacity: 0.32,
         rotate: degrees(-24),
       });
     }
@@ -165,20 +171,11 @@ async function renderWatermarkedPdf(source: Buffer, email: string, traceId: stri
   return { buffer: Buffer.from(await document.save({ useObjectStreams: true, addDefaultPage: false })), pageCount: document.getPageCount() };
 }
 
-async function renderViewerContent(viewer: Awaited<ReturnType<typeof requireViewerSession>>) {
+async function renderViewerContentUncached(viewer: Awaited<ReturnType<typeof requireViewerSession>>) {
   if (!viewer.contentItem.storagePath) throw notFound("NOTE_NOT_FOUND", "The note source is unavailable.");
   if (viewer.contentItem.size > BigInt(MAX_PROTECTED_NOTE_SOURCE_BYTES)) throw serviceUnavailable("NOTE_TOO_LARGE_FOR_PROTECTED_VIEW", "This note is too large for protected viewing.");
 
   const mimeType = viewer.contentItem.mimeType ?? "application/octet-stream";
-  if (mimeType === "application/pdf") {
-    const cached = protectedPdfCache.get(viewer.id);
-    if (cached && cached.expiresAt > new Date()) {
-      await prisma.noteViewerSession.updateMany({ where: { id: viewer.id, status: "ACTIVE" }, data: { lastSeenAt: new Date() } });
-      return cached.content;
-    }
-    if (cached) protectedPdfCache.delete(viewer.id);
-  }
-
   const signedUrl = await getStorageProvider().createDownloadUrl(viewer.contentItem.storagePath, 60);
   let response: Response;
   try {
@@ -198,10 +195,39 @@ async function renderViewerContent(viewer: Awaited<ReturnType<typeof requireView
   }
 
   const rendered = await renderWatermarkedPdf(source, viewer.user.email, viewer.traceId, viewer.openedAt);
-  await prisma.noteViewerSession.updateMany({ where: { id: viewer.id, status: "ACTIVE" }, data: { pageCount: rendered.pageCount, lastSeenAt: new Date() } });
+  const refreshed = await prisma.noteViewerSession.updateMany({ where: { id: viewer.id, status: "ACTIVE" }, data: { pageCount: rendered.pageCount, lastSeenAt: new Date() } });
   const content = { ...rendered, fileName: viewer.contentItem.name, mimeType: "application/pdf", expiresAt: viewer.expiresAt };
-  protectedPdfCache.set(viewer.id, { expiresAt: viewer.expiresAt, content });
+  // A user can leave while an eagerly started render is still finishing.
+  // Do not retain that completed buffer once the viewer session is closed.
+  if (refreshed.count > 0) protectedPdfCache.set(viewer.id, { expiresAt: viewer.expiresAt, content });
   return content;
+}
+
+async function renderViewerContent(viewer: Awaited<ReturnType<typeof requireViewerSession>>) {
+  const mimeType = viewer.contentItem.mimeType ?? "application/octet-stream";
+  if (mimeType !== "application/pdf") return renderViewerContentUncached(viewer);
+
+  const cached = protectedPdfCache.get(viewer.id);
+  if (cached && cached.expiresAt > new Date()) {
+    await prisma.noteViewerSession.updateMany({ where: { id: viewer.id, status: "ACTIVE" }, data: { lastSeenAt: new Date() } });
+    return cached.content;
+  }
+  if (cached) protectedPdfCache.delete(viewer.id);
+
+  // Native PDF renderers commonly issue several overlapping byte-range
+  // requests while opening a document. Without sharing this promise, every
+  // request independently downloads the full R2 object and repeats the costly
+  // PDF parse/watermark/save pass before the first one can populate the cache.
+  const existingRender = protectedPdfRenderInFlight.get(viewer.id);
+  if (existingRender) return existingRender;
+
+  const render = renderViewerContentUncached(viewer);
+  protectedPdfRenderInFlight.set(viewer.id, render);
+  try {
+    return await render;
+  } finally {
+    if (protectedPdfRenderInFlight.get(viewer.id) === render) protectedPdfRenderInFlight.delete(viewer.id);
+  }
 }
 
 export async function getViewerContent(userId: string, userSessionId: string, viewerSessionId: string) {
@@ -212,8 +238,7 @@ export async function getViewerContentByTicket(viewerSessionId: string, ticket: 
   return renderViewerContent(await requireViewerTicket(viewerSessionId, ticket));
 }
 
-export async function getViewerStreamByTicket(viewerSessionId: string, ticket: string, range?: string) {
-  const viewer = await requireViewerTicket(viewerSessionId, ticket);
+async function streamViewerContent(viewer: Awaited<ReturnType<typeof requireViewerTicket>>, range?: string) {
   const mimeType = viewer.contentItem.mimeType ?? "application/octet-stream";
   if (mimeType === "application/pdf") throw badRequest("PDF_STREAM_UNSUPPORTED", "Protected PDFs must use the watermarked renderer.");
   if (!viewer.contentItem.storagePath) throw notFound("NOTE_NOT_FOUND", "The note source is unavailable.");
@@ -227,6 +252,19 @@ export async function getViewerStreamByTicket(viewerSessionId: string, ticket: s
   if (!response.ok) throw serviceUnavailable("NOTE_SOURCE_UNAVAILABLE", "The protected note source is temporarily unavailable.");
   await prisma.noteViewerSession.updateMany({ where: { id: viewer.id, status: "ACTIVE" }, data: { pageCount: 1, lastSeenAt: new Date() } });
   return { response, fileName: viewer.contentItem.name, mimeType, expiresAt: viewer.expiresAt };
+}
+
+export async function getViewerStreamByTicket(viewerSessionId: string, ticket: string, range?: string) {
+  return streamViewerContent(await requireViewerTicket(viewerSessionId, ticket), range);
+}
+
+export async function getViewerResponseByTicket(viewerSessionId: string, ticket: string, range?: string) {
+  const viewer = await requireViewerTicket(viewerSessionId, ticket);
+  const mimeType = viewer.contentItem.mimeType ?? "application/octet-stream";
+  if (mimeType === "application/pdf") {
+    return { kind: "buffer" as const, content: await renderViewerContent(viewer) };
+  }
+  return { kind: "stream" as const, content: await streamViewerContent(viewer, range) };
 }
 
 export async function authorizeViewerTicket(viewerSessionId: string, ticket: string, expectedMimeType?: string) {
@@ -262,6 +300,7 @@ export async function closeViewerSession(userId: string, userSessionId: string, 
   const now = new Date();
   if (viewer.status === "ACTIVE") await prisma.noteViewerSession.update({ where: { id: viewer.id }, data: { status: "CLOSED", closedAt: now, lastSeenAt: now } });
   protectedPdfCache.delete(viewer.id);
+  protectedPdfRenderInFlight.delete(viewer.id);
 }
 
 export function safeInlineFileName(value: string, mimeType = "application/pdf") {

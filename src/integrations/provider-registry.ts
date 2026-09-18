@@ -34,7 +34,7 @@ export function getEmailProvider(): EmailProvider {
   if (config.driver === "smtp") {
     return new SmtpEmailProvider({
       host: config.smtp.host!, port: config.smtp.port, secure: config.smtp.secure,
-      user: config.smtp.user!, password: config.smtp.password!, from: config.smtp.from!,
+      user: config.smtp.user!, password: config.smtp.password!, from: config.smtp.from!, replyTo: config.smtp.replyTo,
     });
   }
   if (config.webhookUrl) return new HttpEmailProvider(config.webhookUrl, config.bearerToken);

@@ -102,10 +102,10 @@ protectedViewerRouter.get("/:viewerSessionId/file-view", asyncRoute(async (req, 
 protectedViewerRouter.get("/:viewerSessionId/content", asyncRoute(async (req, res) => {
   const viewerSessionId = uuid.parse(req.params.viewerSessionId);
   const ticket = ticketSchema.parse(req.query.ticket);
-  const authorised = await viewer.authorizeViewerTicket(viewerSessionId, ticket);
   const rangeHeader = req.get("range") ?? undefined;
-  if (authorised.mimeType !== "application/pdf") {
-    const content = await viewer.getViewerStreamByTicket(viewerSessionId, ticket, rangeHeader);
+  const resolved = await viewer.getViewerResponseByTicket(viewerSessionId, ticket, rangeHeader);
+  if (resolved.kind === "stream") {
+    const content = resolved.content;
     const upstream = content.response;
     const headers: Record<string, string> = {
       "Accept-Ranges": upstream.headers.get("accept-ranges") ?? "bytes",
@@ -140,7 +140,7 @@ protectedViewerRouter.get("/:viewerSessionId/content", asyncRoute(async (req, re
     }
     return;
   }
-  const content = await viewer.getViewerContentByTicket(viewerSessionId, ticket);
+  const content = resolved.content;
   const total = content.buffer.length;
   let start = 0;
   let end = total - 1;

@@ -1,5 +1,6 @@
 export interface EmailMessage {
   to: string;
+  recipientSource?: "registered-user" | "registration-challenge" | "verified-new-email" | "configured-contact";
   template: string;
   variables: Record<string, string>;
   idempotencyKey: string;

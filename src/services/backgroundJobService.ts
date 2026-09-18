@@ -41,7 +41,7 @@ async function execute(job: { id: string; kind: string; payload: unknown; academ
     const submission = await prisma.contactSubmission.findUniqueOrThrow({ where: { id: String(data.submissionId) }, include: { academy: { select: { email: true } } } });
     const recipient = submission.academy?.email ?? getConfig().email.contactRecipient;
     if (!recipient) throw new Error("CONTACT_RECIPIENT_NOT_CONFIGURED");
-    const sent = await getEmailProvider().send({ to: recipient, template: "contact-submission", variables: { name: submission.name, email: submission.email, phone: submission.phone ?? "", subject: submission.subject, message: submission.message }, idempotencyKey: `contact:${submission.id}` });
+    const sent = await getEmailProvider().send({ to: recipient, recipientSource: "configured-contact", template: "contact-submission", variables: { name: submission.name, email: submission.email, phone: submission.phone ?? "", subject: submission.subject, message: submission.message }, idempotencyKey: `contact:${submission.id}` });
     await prisma.contactSubmission.update({ where: { id: submission.id }, data: { status: "DELIVERED" } });
     return sent;
   }
