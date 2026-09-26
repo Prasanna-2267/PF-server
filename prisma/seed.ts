@@ -8,6 +8,10 @@ import {
 } from "./seed-data.js";
 
 async function seedAuthFoundation(): Promise<void> {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Development seed data is disabled in production.");
+  }
+
   const roles = await Promise.all(
     GLOBAL_ROLE_SEEDS.map((role) =>
       prisma.role.upsert({

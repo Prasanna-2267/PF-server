@@ -1,0 +1,24 @@
+steps:
+  - id: build-api-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target
+      - runtime
+      - --tag
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/parallax-flow-api:${_TAG}
+      - .
+  - id: build-migration-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target
+      - migration
+      - --tag
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/parallax-flow-migration:${_TAG}
+      - .
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/parallax-flow-api:${_TAG}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/parallax-flow-migration:${_TAG}
+options:
+  logging: CLOUD_LOGGING_ONLY

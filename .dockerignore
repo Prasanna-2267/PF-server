@@ -8,3 +8,7 @@ dist
 node_modules
 npm-debug.log*
 *_REPORT.md
+backups
+deploy/*.env.yaml
+deploy/*.secret.yaml
+.gcloudignore

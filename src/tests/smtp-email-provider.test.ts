@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderEmailMessage } from "../integrations/smtp-email-provider.js";
 
+Object.assign(process.env, {
+  NODE_ENV: "test",
+  DATABASE_URL: "postgresql://user:password@localhost:5432/test",
+  AUTH_JWT_SECRET: "smtp-renderer-test-secret-at-least-32-characters",
+  CORS_ALLOWED_ORIGINS: "https://app.example.test",
+  PUBLIC_APP_URL: "https://app.example.test",
+  SUPPORT_EMAIL: "support@example.test",
+  NEURALWEB_LABS_URL: "https://neuralweblabs.example",
+  EXPO_PUSH_ENDPOINT: "https://push.example.test/send",
+});
+
 test("registration OTP email renders the code and escapes user content", () => {
   const rendered = renderEmailMessage({
     to: "learner@example.test",
@@ -48,7 +59,7 @@ test("SMTP renderer supports escaped Academy announcements and contact submissio
   assert.match(announcement.subject, /Schedule update/);
   assert.match(announcement.html, /Learner &lt;One&gt;/);
   assert.match(announcement.html, /Powered by <strong[^>]*>NeuralWeb Labs/);
-  assert.match(announcement.html, /href="http:\/\/neuralweblabs\.com\/"/);
+  assert.match(announcement.html, /href="https:\/\/neuralweblabs\.example"/);
 
   const contact = renderEmailMessage({
     to: "support@example.test",
@@ -176,7 +187,7 @@ test("purchase receipt email uses the premium responsive receipt and linked bran
   assert.match(rendered.html, /OFFICIAL PAYMENT RECEIPT/);
   assert.match(rendered.html, /Coupon discount/);
   assert.match(rendered.html, /INR 480\.00/);
-  assert.match(rendered.html, /href="http:\/\/neuralweblabs\.com\/"/);
+  assert.match(rendered.html, /href="https:\/\/neuralweblabs\.example"/);
   assert.match(rendered.html, /Learner &lt;One&gt;/);
   assert.doesNotMatch(rendered.html, /Learner <One>/);
 });

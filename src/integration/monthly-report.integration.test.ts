@@ -3,14 +3,14 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { prisma } from "../db/prisma.js";
 import { databaseDate, databaseDateKey } from "../services/learnerTime.js";
-import { confirmFakePayment, createCheckout } from "../services/commerceService.js";
+import { createCheckout, handlePaymentWebhook } from "../services/commerceService.js";
 import { providerTestHooks } from "../integrations/provider-registry.js";
+import type { PaymentProvider } from "../integrations/payment-provider.js";
 import * as reports from "../services/monthlyReportService.js";
 import * as reportViewer from "../services/monthlyReportViewerService.js";
 import { deliverMonthlyReportEmail } from "../services/monthlyReportEmailService.js";
 import type { EmailMessage } from "../integrations/email-provider.js";
 import { integrationDatabaseEnabled } from "../tests/integration-database-guard.js";
-import { getConfig } from "../config/env.js";
 
 const enabled = integrationDatabaseEnabled("RUN_BACKEND_INTEGRATION");
 const suffix = randomUUID().slice(0, 8);
@@ -24,12 +24,19 @@ let previousMonth = "";
 let purchaseMonth = "";
 const storedObjects = new Map<string, Buffer>();
 const sentEmails: EmailMessage[] = [];
-let originalFakePaymentEnabled = false;
 
 before(async () => {
   if (!enabled) return;
-  originalFakePaymentEnabled = getConfig().payment.fakePaymentEnabled;
-  getConfig().payment.fakePaymentEnabled = true;
+  const paymentProvider: PaymentProvider = {
+    async createCheckout(request) { return { providerPaymentId: `monthly-provider-${request.orderId}`, redirectUrl: `https://payments.example.test/${request.orderId}` }; },
+    async verifyWebhook(rawBody, signature) {
+      if (signature !== "valid") throw new Error("Invalid signature");
+      const payload = JSON.parse(rawBody.toString()) as { eventId: string; providerPaymentId: string };
+      return { eventId: payload.eventId, eventType: "PAYMENT_SUCCEEDED", payload: { providerPaymentId: payload.providerPaymentId, status: "SUCCESS" } };
+    },
+    async refund(_providerPaymentId, _amountMinor, idempotencyKey) { return { providerRefundId: `refund-${idempotencyKey}` }; },
+  };
+  providerTestHooks.setPayment(paymentProvider);
   const role = await prisma.role.upsert({ where: { key: "student" }, create: { key: "student", name: "Student", description: "Learner role" }, update: {}, select: { id: true } });
   userId = randomUUID(); otherUserId = randomUUID(); courseId = randomUUID(); noteId = randomUUID();
   const previous = new Date(); previous.setUTCMonth(previous.getUTCMonth() - 1, 10); previousMonth = databaseDateKey(previous).slice(0, 7);
@@ -68,7 +75,6 @@ after(async () => {
   await prisma.course.delete({ where: { id: courseId } });
   await prisma.user.delete({ where: { id: otherUserId } });
   providerTestHooks.reset();
-  getConfig().payment.fakePaymentEnabled = originalFakePaymentEnabled;
   storedObjects.clear();
   await prisma.$disconnect();
 });
@@ -78,12 +84,12 @@ test("Monthly Report purchase grants its exact entitlement and schedules the pur
   assert.equal(locked.access.owned, false);
   assert.equal(locked.items.length, 0);
 
-  const checkout = await createCheckout(userId, { items: [{ resourceType: "CONTENT", resourceId: productId }] }, `monthly-checkout-${suffix}`) as { orderId: string; requiresFakePayment?: boolean };
+  const checkout = await createCheckout(userId, { items: [{ resourceType: "CONTENT", resourceId: productId }] }, `monthly-checkout-${suffix}`) as { orderId: string; checkoutUrl?: string };
   orderId = checkout.orderId;
-  assert.equal(checkout.requiresFakePayment, true);
-  const payment = await confirmFakePayment(userId, orderId, `monthly-payment-${suffix}`) as { status: string; accessStatus: string };
-  assert.equal(payment.status, "PAID");
-  assert.equal(payment.accessStatus, "GRANTED");
+  assert.ok(checkout.checkoutUrl);
+  const providerPayment = await prisma.payment.findFirstOrThrow({ where: { orderId } });
+  const webhookBody = Buffer.from(JSON.stringify({ eventId: `monthly-payment-${suffix}`, providerPaymentId: providerPayment.providerPaymentId }));
+  await handlePaymentWebhook("http", webhookBody, "valid");
   const entitlement = await prisma.entitlement.findFirst({ where: { userId, contentItemId: productId, resourceType: "MONTHLY_REPORT", status: "ACTIVE" } });
   assert.ok(entitlement);
 

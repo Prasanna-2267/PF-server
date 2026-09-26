@@ -23,7 +23,7 @@ const environmentSchema = z
     AUTH_AUDIENCE: z.string().trim().min(1).default("parallax-flow-web"),
     AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
     AUTH_REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().min(3600).max(7_776_000).default(2_592_000),
-    CORS_ALLOWED_ORIGINS: z.string().default("http://localhost:5173"),
+    CORS_ALLOWED_ORIGINS: z.string(),
     TRUST_PROXY: z.string().default("false"),
     JSON_BODY_LIMIT: z.string().trim().min(1).default("1mb"),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -57,9 +57,10 @@ const environmentSchema = z
     SMTP_FROM: optionalTrimmedString,
     SMTP_REPLY_TO: optionalTrimmedString,
     CONTACT_RECIPIENT_EMAIL: optionalTrimmedString,
-    PUBLIC_APP_URL: optionalTrimmedString,
+    PUBLIC_APP_URL: z.string().url(),
     PUBLIC_LOGO_URL: optionalTrimmedString,
-    SUPPORT_EMAIL: optionalTrimmedString,
+    SUPPORT_EMAIL: z.string().email(),
+    NEURALWEB_LABS_URL: z.string().url(),
     SMS_WEBHOOK_URL: optionalTrimmedString,
     SMS_WEBHOOK_BEARER_TOKEN: optionalTrimmedString,
     PAYMENT_CHECKOUT_URL: optionalTrimmedString,
@@ -68,7 +69,7 @@ const environmentSchema = z
     PAYMENT_PROVIDER_NAME: z.string().trim().regex(/^[a-z0-9_-]{2,40}$/).default("http"),
     FAKE_PAYMENT_ENABLED: booleanFromString,
     PILOT_FAKE_PAYMENT_ENABLED: booleanFromString,
-    EXPO_PUSH_ENDPOINT: z.string().url().default("https://exp.host/--/api/v2/push/send"),
+    EXPO_PUSH_ENDPOINT: z.string().url(),
     EXPO_ACCESS_TOKEN: optionalTrimmedString,
   })
   .superRefine((value, context) => {
@@ -155,7 +156,7 @@ export interface AppConfig {
     contactRecipient?: string;
     smtp: { host?: string; port: number; secure: boolean; user?: string; password?: string; from?: string; replyTo?: string };
   };
-  branding: { appUrl: string; logoUrl: string; supportEmail: string };
+  branding: { appUrl: string; logoUrl: string; supportEmail: string; neuralWebLabsUrl: string };
   sms: { webhookUrl?: string; bearerToken?: string };
   payment: { providerName: string; checkoutUrl?: string; webhookSecret?: string; bearerToken?: string; fakePaymentEnabled: boolean; pilotFakePaymentEnabled: boolean };
   push: { endpoint: string; accessToken?: string };
@@ -202,14 +203,12 @@ export const parseEnvironment = (input: NodeJS.ProcessEnv): AppConfig => {
   const secretAccessKey = env.STORAGE_S3_SECRET_ACCESS_KEY || env.R2_SECRET_ACCESS_KEY;
   const hasS3Config = Boolean(endpoint && bucket && accessKeyId && secretAccessKey);
   const driver = env.STORAGE_DRIVER === "s3" || hasS3Config ? "s3" : "disabled";
-  const appUrl = env.PUBLIC_APP_URL ?? corsOrigins.values().next().value;
-  if (!appUrl) throw new Error("Invalid server configuration: PUBLIC_APP_URL is required when no CORS origin is configured");
+  const appUrl = env.PUBLIC_APP_URL;
   const parsedAppUrl = new URL(appUrl);
   if (!/^https?:$/.test(parsedAppUrl.protocol)) throw new Error("Invalid server configuration: PUBLIC_APP_URL must use HTTP or HTTPS");
   const logoUrl = env.PUBLIC_LOGO_URL ?? new URL("/logo.png", parsedAppUrl).toString();
   const parsedLogoUrl = new URL(logoUrl);
   if (!/^https?:$/.test(parsedLogoUrl.protocol)) throw new Error("Invalid server configuration: PUBLIC_LOGO_URL must use HTTP or HTTPS");
-  const senderAddress = env.SMTP_FROM?.match(/<([^>]+)>/)?.[1] ?? env.SMTP_FROM;
 
   return {
     environment: env.NODE_ENV,
@@ -257,7 +256,8 @@ export const parseEnvironment = (input: NodeJS.ProcessEnv): AppConfig => {
     branding: {
       appUrl: parsedAppUrl.toString(),
       logoUrl: parsedLogoUrl.toString(),
-      supportEmail: env.SUPPORT_EMAIL ?? env.CONTACT_RECIPIENT_EMAIL ?? senderAddress ?? "support@parallaxflow.com",
+      supportEmail: env.SUPPORT_EMAIL,
+      neuralWebLabsUrl: env.NEURALWEB_LABS_URL,
     },
     sms: { webhookUrl: env.SMS_WEBHOOK_URL, bearerToken: env.SMS_WEBHOOK_BEARER_TOKEN },
     payment: {

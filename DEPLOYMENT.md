@@ -1,5 +1,7 @@
 # Server deployment handoff
 
+For the Docker-only Google Cloud Run procedure, environment YAML generation, migration job, and isolated gcloud account setup, follow [deploy/README.md](deploy/README.md).
+
 This repository is the single Express/Prisma/PostgreSQL backend used by the web and mobile clients. A production deployment requires an API service and a separate durable-worker service using the same release image and environment.
 
 ## Release architecture
@@ -7,7 +9,7 @@ This repository is the single Express/Prisma/PostgreSQL backend used by the web 
 - API command: `npm start`
 - Worker command: `npm run jobs:worker`
 - API health: `GET /health/live` and `GET /health/ready`
-- Container port: `4000`
+- Container port: `8080` (Cloud Run injects `PORT`; do not put `PORT` in the environment YAML)
 - Runtime user: non-root `node`
 - Database migrations: an explicit, one-off release job before application promotion
 
@@ -17,7 +19,7 @@ Do not run multiple ad-hoc schedulers in place of the durable worker. The worker
 
 Start from `.env.example` and supply real secrets through the deployment platform. At minimum configure:
 
-- `NODE_ENV=production`, `HOST=0.0.0.0`, and `PORT=4000`;
+- `NODE_ENV=production`, `HOST=0.0.0.0`, and Cloud Run-provided `PORT=8080`;
 - pooled `DATABASE_URL` and migration-safe `DIRECT_URL`;
 - a unique 32+ character `AUTH_JWT_SECRET`;
 - exact HTTPS `CORS_ALLOWED_ORIGINS` and `PUBLIC_APP_URL`;
@@ -27,7 +29,7 @@ Start from `.env.example` and supply real secrets through the deployment platfor
 - SMTP or HTTP email-provider credentials;
 - the real payment provider/webhook credentials;
 - Expo push credentials when enhanced push security is enabled;
-- `FAKE_PAYMENT_ENABLED=false`.
+- for the currently approved simulated-payment pilot only: `FAKE_PAYMENT_ENABLED=true` and `PILOT_FAKE_PAYMENT_ENABLED=true`; replace both with the reviewed real-provider settings before enabling real payments.
 
 Provider-backed production features intentionally return controlled errors when their provider is absent. Never replace missing provider configuration with fake success paths.
 

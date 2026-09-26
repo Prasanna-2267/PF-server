@@ -5,17 +5,22 @@ const sha256 = (value: string | Buffer) => createHash("sha256").update(value).di
 const hmac = (key: string | Buffer, value: string) => createHmac("sha256", key).update(value).digest();
 const amzDate = (date: Date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
 
+const requireEnvironmentValue = (name: string) => {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} must be configured before updating R2 CORS.`);
+  return value;
+};
+
 async function main() {
-  const endpoint = process.env.R2_ENDPOINT!;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
-  const bucketName = process.env.R2_BUCKET_NAME || "parallax-flow-assets";
+  const endpoint = requireEnvironmentValue("R2_ENDPOINT");
+  const accessKeyId = requireEnvironmentValue("R2_ACCESS_KEY_ID");
+  const secretAccessKey = requireEnvironmentValue("R2_SECRET_ACCESS_KEY");
+  const bucketName = requireEnvironmentValue("R2_BUCKET_NAME");
   const region = process.env.R2_REGION || "auto";
-  const allowedOrigins = [...new Set([
-    ...(process.env.CORS_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean),
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-  ])];
+  const allowedOrigins = [...new Set(requireEnvironmentValue("CORS_ALLOWED_ORIGINS")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean))];
   const originXml = allowedOrigins.map((origin) => `    <AllowedOrigin>${origin.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</AllowedOrigin>`).join("\n");
 
   const corsXml = `<?xml version="1.0" encoding="UTF-8"?>

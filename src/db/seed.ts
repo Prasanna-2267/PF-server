@@ -1,6 +1,10 @@
 import { prisma } from './prisma.js';
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Development seed data is disabled in production.');
+  }
+
   console.log('Seeding Parallax Flow Multi-Tenant Database...');
 
   // 1. Roles

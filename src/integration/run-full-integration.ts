@@ -5,7 +5,7 @@ import { assertIntegrationDatabase } from "../tests/integration-database-guard.j
 assertIntegrationDatabase("RUN_BACKEND_INTEGRATION");
 process.env.NODE_ENV = "test";
 process.env.AUTH_JWT_SECRET = "phase-4-integration-only-secret-never-use-in-production";
-process.env.CORS_ALLOWED_ORIGINS = "http://localhost:5173";
+process.env.CORS_ALLOWED_ORIGINS ||= process.env.PUBLIC_APP_URL ?? "";
 process.env.STORAGE_DRIVER = "disabled";
 process.env.AUTH_STAGED_REGISTRATION_ENABLED = "true";
 // Keep explicit empty values in the child environment so dotenv cannot reload
@@ -17,7 +17,6 @@ for (const providerVariable of [
   "SMS_WEBHOOK_URL", "SMS_WEBHOOK_BEARER_TOKEN",
   "PAYMENT_CHECKOUT_URL", "PAYMENT_WEBHOOK_SECRET", "PAYMENT_BEARER_TOKEN",
 ]) process.env[providerVariable] = "";
-process.env.FAKE_PAYMENT_ENABLED = "false";
 for (const flag of ["ADMISSIONS_TEST_DATABASE", "ANALYTICS_TEST_DATABASE", "NOTIFICATION_TEST_DATABASE", "SETTINGS_TEST_DATABASE"]) process.env[flag] = "1";
 
 const tsxCli = fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url));

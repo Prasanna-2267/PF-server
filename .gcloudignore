@@ -1,0 +1,15 @@
+.gcloudignore
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+node_modules
+dist
+coverage
+backups
+.tmp-*
+*_REPORT.md
+deploy/*.env.yaml
+deploy/*.secret.yaml
+npm-debug.log*

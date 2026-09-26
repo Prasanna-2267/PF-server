@@ -24,11 +24,17 @@ COPY scripts ./scripts
 
 RUN DIRECT_URL=postgresql://build:build@127.0.0.1:5432/build npm run build
 
+FROM build AS migration
+
+ENV NODE_ENV=production
+
+CMD ["npx", "prisma", "migrate", "deploy"]
+
 FROM base AS runtime
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=4000
+    PORT=8080
 
 WORKDIR /app
 
@@ -45,9 +51,11 @@ COPY --from=build --chown=node:node /app/assets ./assets
 
 USER node
 
-EXPOSE 4000
+EXPOSE 8080
+
+STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:4000/health/ready').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || '8080') + '/health/ready').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"
 
 CMD ["node", "dist/src/index.js"]

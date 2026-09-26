@@ -32,6 +32,7 @@ pnpm-debug.log*
 uploads/
 storage/
 test-storage/
+backups/
 
 # Temporary files and caches
 .tmp/
@@ -65,3 +66,7 @@ test-results/
 playwright-report/
 *.lcov
 crash-*.json
+# Local Cloud Run environment exports (contain production credentials)
+deploy/*.env.yaml
+deploy/*.secret.yaml
+!deploy/*.env.yaml.example

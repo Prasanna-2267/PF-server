@@ -71,12 +71,6 @@ const deliveryFailure = () =>
   serviceUnavailable("OTP_DELIVERY_UNAVAILABLE", "The email verification code could not be delivered. Try again.");
 
 const deliverOtp = async (challenge: { id: string; email: string; phone: string; fullName: string }, channel: OtpChannel, code: string) => {
-  const config = getConfig();
-  if (config.environment !== "production") {
-    const configured = config.email.driver === "smtp" || Boolean(config.email.webhookUrl);
-    if (!configured) return { developmentCode: code };
-  }
-
   try {
     await getEmailProvider().send({
       to: challenge.email,
@@ -85,7 +79,6 @@ const deliverOtp = async (challenge: { id: string; email: string; phone: string;
       variables: { name: challenge.fullName, code, expiresInMinutes: String(CHALLENGE_TTL_MS / 60_000) },
       idempotencyKey: `registration:${challenge.id}:email:${otpHash(challenge.id, channel, code).slice(0, 16)}`,
     });
-    return {};
   } catch {
     throw deliveryFailure();
   }
@@ -138,9 +131,8 @@ export async function createRegistration(input: { fullName: string; phone: strin
     });
     return created;
   });
-  let delivery: { developmentCode?: string };
   try {
-    delivery = await deliverOtp(challenge, "email", emailCode);
+    await deliverOtp(challenge, "email", emailCode);
   } catch (error) {
     await prisma.registrationChallenge.update({
       where: { id: challenge.id },
@@ -152,7 +144,6 @@ export async function createRegistration(input: { fullName: string; phone: strin
     registrationId: challenge.id,
     email: { masked: maskEmail(email), status: "PENDING" as const, resendAfter: new Date(challenge.emailSentAt!.getTime() + RESEND_COOLDOWN_MS) },
     expiresAt,
-    ...delivery,
   };
 }
 
@@ -172,9 +163,8 @@ export async function sendRegistrationOtp(registrationId: string, channel: OtpCh
   const sentAt = new Date();
   const data = { emailOtpHash: codeHash, emailSentAt: sentAt, emailAttempts: 0, emailResendCount: { increment: 1 } };
   const updated = await prisma.registrationChallenge.update({ where: { id: registrationId }, data });
-  let delivery: { developmentCode?: string };
   try {
-    delivery = await deliverOtp(updated, channel, code);
+    await deliverOtp(updated, channel, code);
   } catch (error) {
     await prisma.registrationChallenge.updateMany({
       where: { id: registrationId, emailOtpHash: codeHash },
@@ -182,7 +172,7 @@ export async function sendRegistrationOtp(registrationId: string, channel: OtpCh
     });
     throw error;
   }
-  return { channel, status: "PENDING" as const, resendAfter: new Date(sentAt.getTime() + RESEND_COOLDOWN_MS), ...delivery };
+  return { channel, status: "PENDING" as const, resendAfter: new Date(sentAt.getTime() + RESEND_COOLDOWN_MS) };
 }
 
 export async function verifyRegistrationOtp(registrationId: string, channel: OtpChannel, code: string) {
